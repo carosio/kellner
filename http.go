@@ -6,6 +6,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os/exec"
 	"path"
 	"strings"
 	"text/template"
@@ -52,25 +53,26 @@ This repository contains {{.Entries|len}} packages with an accumulated size of {
 
 func ServeHTTP(packages *PackageIndex, root, bind string) {
 
+	now := time.Now()
+
 	packages_content := bytes.NewBuffer(nil)
 	packages_content_gz := bytes.NewBuffer(nil)
 	packages.StringTo(packages_content)
-	gz := gzip.NewWriter(packages_content_gz)
-	gz.Write(packages_content.Bytes())
-	gz.Close()
+	make_gz_gzip_pipe(packages_content_gz, packages_content.Bytes())
 
 	packages_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			w.Write(packages_content.Bytes())
+			http.ServeContent(w, r, "Packages", now, bytes.NewReader(packages_content.Bytes()))
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Encoding", "gzip")
-		w.Write(packages_content_gz.Bytes())
+		http.ServeContent(w, r, "Packages", now, bytes.NewReader(packages_content_gz.Bytes()))
+
 	})
 
 	packages_gz_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write(packages_content_gz.Bytes())
+		http.ServeContent(w, r, "Packages.gz", now, bytes.NewReader(packages_content_gz.Bytes()))
 	})
 
 	index_handler := func() http.Handler {
@@ -136,6 +138,24 @@ func ServeHTTP(packages *PackageIndex, root, bind string) {
 	http.Handle("/", logger(index_handler))
 
 	http.ListenAndServe(bind, nil)
+}
+
+func make_gz_golang_native(w io.Writer, data []byte) {
+	gz, _ := gzip.NewWriterLevel(w, gzip.BestCompression)
+	gz.Header.ModTime = time.Now()
+	gz.Write(data)
+	gz.Close()
+}
+
+// use a pipe to 'gzip' to create the gz in a way
+// that opkg accepts the output. right now it's unclear
+// why opkg explodes when it hits a golang-native-created
+// gz file.
+func make_gz_gzip_pipe(w io.Writer, data []byte) {
+	cmd := exec.Command("gzip", "-9", "-c")
+	cmd.Stdin = bytes.NewReader(data)
+	cmd.Stdout = w
+	cmd.Run()
 }
 
 // wraps 'orig_handler' to log incoming http-request
