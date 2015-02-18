@@ -35,6 +35,7 @@ func main() {
 		dump_package_list = flag.Bool("dump", false, "just dump the package list and exit")
 		add_md5           = flag.Bool("md5", true, "calculate md5 of scanned packages")
 		add_sha1          = flag.Bool("sha1", true, "calculate sha1 of scanned packages")
+		use_gzip          = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
 		listen            net.Listener
 	)
 
@@ -154,5 +155,10 @@ func main() {
 		return
 	}
 
-	ServeHTTP(&packages, *root_name, GzGzipPipe, listen)
+	gzipper := Gzipper(GzGzipPipe)
+	if !*use_gzip {
+		gzipper = GzGolang
+	}
+
+	ServeHTTP(&packages, *root_name, gzipper, listen)
 }
