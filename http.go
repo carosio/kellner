@@ -5,8 +5,8 @@ import (
 	"compress/gzip"
 	"io"
 	"log"
+	"net"
 	"net/http"
-	"os/exec"
 	"path"
 	"strings"
 	"text/template"
@@ -26,6 +26,7 @@ const TEMPLATE = `<!doctype html>
 <style type="text/css">
 td, th { padding: auto 2em }
 .col-size { text-align: right }
+.col-modtime { white-space: nowrap }
 </style>
 
 <p>
@@ -51,14 +52,14 @@ This repository contains {{.Entries|len}} packages with an accumulated size of {
 	</tbody>
 </table>`
 
-func ServeHTTP(packages *PackageIndex, root, bind string) {
+func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.Listener) {
 
 	now := time.Now()
 
 	packages_content := bytes.NewBuffer(nil)
 	packages_content_gz := bytes.NewBuffer(nil)
 	packages.StringTo(packages_content)
-	make_gz_gzip_pipe(packages_content_gz, packages_content.Bytes())
+	gzipper(packages_content_gz, bytes.NewReader(packages_content.Bytes()))
 
 	packages_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -137,25 +138,7 @@ func ServeHTTP(packages *PackageIndex, root, bind string) {
 	http.Handle("/Packages.gz", logger(packages_gz_handler))
 	http.Handle("/", logger(index_handler))
 
-	http.ListenAndServe(bind, nil)
-}
-
-func make_gz_golang_native(w io.Writer, data []byte) {
-	gz, _ := gzip.NewWriterLevel(w, gzip.BestCompression)
-	gz.Header.ModTime = time.Now()
-	gz.Write(data)
-	gz.Close()
-}
-
-// use a pipe to 'gzip' to create the gz in a way
-// that opkg accepts the output. right now it's unclear
-// why opkg explodes when it hits a golang-native-created
-// gz file.
-func make_gz_gzip_pipe(w io.Writer, data []byte) {
-	cmd := exec.Command("gzip", "-9", "-c")
-	cmd.Stdin = bytes.NewReader(data)
-	cmd.Stdout = w
-	cmd.Run()
+	http.Serve(listen, nil)
 }
 
 // wraps 'orig_handler' to log incoming http-request

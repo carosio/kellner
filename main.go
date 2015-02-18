@@ -18,6 +18,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"path"
 	"sync"
@@ -31,13 +32,25 @@ func main() {
 		bind              = flag.String("bind", ":8080", "address to bind to")
 		root_name         = flag.String("root", "", "directory containing the ipks")
 		dump_package_list = flag.Bool("dump", false, "just dump the package list and exit")
+		listen            net.Listener
 	)
+
 	flag.Parse()
 
 	if *bind == "" {
-		fmt.Fprintf(os.Stderr, "usage error: missing / empty -bind")
+		fmt.Fprintf(os.Stderr, "usage error: missing / empty -bind\n")
 		os.Exit(1)
 	}
+	if !*dump_package_list {
+		l, err := net.Listen("tcp", *bind)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: binding to %q failed: %v\n", *bind, err)
+			os.Exit(1)
+		}
+		listen = l
+		log.Println("listen to %v", l)
+	}
+
 	if *root_name == "" {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -root")
 	}
@@ -110,12 +123,12 @@ func main() {
 	jobs.Wait()
 	close(collector)
 
-	fmt.Fprintf(os.Stderr, "time to parse %d packages: %s\n", len(packages.Entries), time.Since(now))
+	log.Printf("time to parse %d packages: %s\n", len(packages.Entries), time.Since(now))
 
 	if *dump_package_list {
 		os.Stdout.WriteString(packages.String())
 		return
 	}
 
-	ServeHTTP(&packages, *root_name, *bind)
+	ServeHTTP(&packages, *root_name, GzGzipPipe, listen)
 }
