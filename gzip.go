@@ -14,7 +14,7 @@ type Gzipper func(w io.Writer, r io.Reader) error
 func GzGolang(w io.Writer, r io.Reader) error {
 	gz, _ := gzip.NewWriterLevel(w, gzip.BestCompression)
 	gz.Header.ModTime = time.Now()
-	if _, err := io.Copy(w, r); err != nil {
+	if _, err := io.Copy(gz, r); err != nil {
 		return err
 	}
 	gz.Close()
