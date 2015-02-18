@@ -131,6 +131,7 @@ func main() {
 
 			// consume the rest of the file to calculate md5/sha1
 			io.Copy(ioutil.Discard, tee)
+			file.Close() // close to free handles, 'collector' might block freeing otherwise
 
 			ipkg.FileInfo, _ = os.Lstat(full_name)
 			if md5er != nil {
