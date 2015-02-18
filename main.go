@@ -48,7 +48,7 @@ func main() {
 			os.Exit(1)
 		}
 		listen = l
-		log.Println("listen to %v", l)
+		log.Println("listen to", l.Addr())
 	}
 
 	if *root_name == "" {
@@ -61,6 +61,7 @@ func main() {
 		os.Exit(1)
 	}
 
+	log.Println("start building index from", *root_name)
 	now := time.Now()
 	entries, err := root.Readdirnames(-1)
 	if err != nil {
@@ -123,6 +124,7 @@ func main() {
 	jobs.Wait()
 	close(collector)
 
+	log.Println("done building index")
 	log.Printf("time to parse %d packages: %s\n", len(packages.Entries), time.Since(now))
 
 	if *dump_package_list {
