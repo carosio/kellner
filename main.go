@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"hash"
 	"io"
 	"io/ioutil"
 	"log"
@@ -30,8 +31,10 @@ func main() {
 	var (
 		nworkers          = flag.Int("workers", 4, "number of workers")
 		bind              = flag.String("bind", ":8080", "address to bind to")
-		root_name         = flag.String("root", "", "directory containing the ipks")
+		root_name         = flag.String("root", "", "directory containing the packages")
 		dump_package_list = flag.Bool("dump", false, "just dump the package list and exit")
+		add_md5           = flag.Bool("md5", true, "calculate md5 of scanned packages")
+		add_sha1          = flag.Bool("sha1", true, "calculate sha1 of scanned packages")
 		listen            net.Listener
 	)
 
@@ -83,39 +86,58 @@ func main() {
 		jobs.Add(1)
 		go func(name string) {
 			defer jobs.Done()
-			n := path.Join(*root_name, name)
 
-			file, err := os.Open(n)
+			var (
+				full_name = path.Join(*root_name, name)
+				file      *os.File
+				writer    []io.Writer = make([]io.Writer, 0, 3)
+				err       error
+				md5er     hash.Hash
+				sha1er    hash.Hash
+			)
+
+			file, err = os.Open(full_name)
 			if err != nil {
-				log.Printf("openening %q: %v", n, err)
+				log.Printf("openening %q: %v", full_name, err)
 				return
 			}
 			defer file.Close()
 
-			// TODO: make it optional
-			md5er := md5.New()
-			sha1er := sha1.New()
-			tee := io.TeeReader(file, io.MultiWriter(md5er, sha1er))
+			writer = append(writer, ioutil.Discard)
+			if *add_md5 {
+				md5er = md5.New()
+				writer = append(writer, md5er)
+			}
+			if *add_sha1 {
+				sha1er = sha1.New()
+				writer = append(writer, sha1er)
+			}
+
+			tee := io.TeeReader(file, io.MultiWriter(writer...))
 
 			control, err := ExtractControlFromIpk(tee)
 			if err != nil {
-				log.Printf("error: extract pkg-info from %q: %v", n, err)
+				log.Printf("error: extract pkg-info from %q: %v", full_name, err)
 				return
 			}
 
 			ipkg := &Ipkg{Name: name, Control: control, Header: make(map[string]string)}
 
 			if err := ipkg.ControlToHeader(control); err != nil {
-				log.Printf("error: header parse error in %q: %v", n, err)
+				log.Printf("error: header parse error in %q: %v", full_name, err)
 				return
 			}
 
 			// consume the rest of the file to calculate md5/sha1
 			io.Copy(ioutil.Discard, tee)
 
-			ipkg.FileInfo, _ = os.Lstat(n)
-			ipkg.Md5 = hex.EncodeToString(md5er.Sum(nil))
-			ipkg.Sha1 = hex.EncodeToString(sha1er.Sum(nil))
+			ipkg.FileInfo, _ = os.Lstat(full_name)
+			if md5er != nil {
+				ipkg.Md5 = hex.EncodeToString(md5er.Sum(nil))
+			}
+			if sha1er != nil {
+				ipkg.Sha1 = hex.EncodeToString(sha1er.Sum(nil))
+			}
 			ipkg.EnhanceHeader()
 
 			collector <- ipkg
