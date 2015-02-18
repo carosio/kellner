@@ -56,10 +56,12 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 
 	now := time.Now()
 
+	packages_stamps := bytes.NewBuffer(nil)
 	packages_content := bytes.NewBuffer(nil)
 	packages_content_gz := bytes.NewBuffer(nil)
 	packages.StringTo(packages_content)
 	gzipper(packages_content_gz, bytes.NewReader(packages_content.Bytes()))
+	packages.StampsTo(packages_stamps)
 
 	packages_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -69,11 +71,14 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Encoding", "gzip")
 		http.ServeContent(w, r, "Packages", now, bytes.NewReader(packages_content_gz.Bytes()))
-
 	})
 
 	packages_gz_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.ServeContent(w, r, "Packages.gz", now, bytes.NewReader(packages_content_gz.Bytes()))
+	})
+
+	packages_stamps_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "Packages.stamps", now, bytes.NewReader(packages_stamps.Bytes()))
 	})
 
 	index_handler := func() http.Handler {
@@ -91,13 +96,15 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 			SumFileSize int64
 		}{Title: "opkg-list"}
 
-		ctx.Entries = make([]DirEntry, len(names)+2)
-		ctx.Entries[0] = DirEntry{Name: "Packages", ModTime: time.Now(), Size: int64(packages_content.Len())}
-		ctx.Entries[1] = DirEntry{Name: "Packages.gz", ModTime: time.Now(), Size: int64(packages_content_gz.Len())}
+		const n_meta_files = 3
+		ctx.Entries = make([]DirEntry, len(names)+n_meta_files)
+		ctx.Entries[0] = DirEntry{Name: "Packages", ModTime: now, Size: int64(packages_content.Len())}
+		ctx.Entries[1] = DirEntry{Name: "Packages.gz", ModTime: now, Size: int64(packages_content_gz.Len())}
+		ctx.Entries[2] = DirEntry{Name: "Packages.stamps", ModTime: now, Size: int64(packages_stamps.Len())}
 
 		for i, name := range names {
 			ipkg := packages.Entries[name]
-			ctx.Entries[i+2] = ipkg.DirEntry()
+			ctx.Entries[i+n_meta_files] = ipkg.DirEntry()
 			ctx.SumFileSize += ipkg.FileInfo.Size()
 		}
 
@@ -136,6 +143,7 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 
 	http.Handle("/Packages", logger(packages_handler))
 	http.Handle("/Packages.gz", logger(packages_gz_handler))
+	http.Handle("/Packages.stamps", logger(packages_stamps_handler))
 	http.Handle("/", logger(index_handler))
 
 	http.Serve(listen, nil)

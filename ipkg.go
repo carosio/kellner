@@ -127,6 +127,13 @@ func (pi *PackageIndex) StringTo(w io.Writer) {
 	}
 }
 
+func (pi *PackageIndex) StampsTo(w io.Writer) {
+	for _, name := range pi.SortedNames() {
+		entry := pi.Entries[name]
+		fmt.Fprintf(w, "%d %s\n", entry.FileInfo.ModTime().Unix(), name)
+	}
+}
+
 func (pi *PackageIndex) String() string {
 	buf := bytes.NewBuffer(nil)
 	pi.StringTo(buf)
