@@ -90,6 +90,7 @@ func (ipkg *Ipkg) HeaderTo(w io.Writer) {
 
 func (ipkg *Ipkg) ControlAndChecksumTo(w io.Writer) {
 	io.WriteString(w, ipkg.Control)
+	fmt.Fprintf(w, "Filename: %s\n", ipkg.Name)
 	fmt.Fprintf(w, "Size: %d\n", ipkg.FileInfo.Size())
 	if ipkg.Md5 != "" {
 		fmt.Fprintf(w, "MD5Sum: %s\n", ipkg.Md5)
