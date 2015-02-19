@@ -10,14 +10,8 @@ package main
 // * opkg-make-index from the opkg-utils collection
 
 import (
-	"crypto/md5"
-	"crypto/sha1"
-	"encoding/hex"
 	"flag"
 	"fmt"
-	"hash"
-	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -77,76 +71,26 @@ func main() {
 	// create package list
 	//
 	packages := PackageIndex{Entries: make(map[string]*Ipkg)}
-	collector := packages.CollectIpkgs(*nworkers)
-	jobs := sync.WaitGroup{}
+	workers := NewWorkerPool(*nworkers)
 
 	for _, entry := range entries {
 		if path.Ext(entry) != ".ipk" {
 			continue
 		}
-		jobs.Add(1)
+		workers.Hire()
 		go func(name string) {
-			defer jobs.Done()
-
-			var (
-				full_name = path.Join(*root_name, name)
-				file      *os.File
-				writer    []io.Writer = make([]io.Writer, 0, 3)
-				err       error
-				md5er     hash.Hash
-				sha1er    hash.Hash
-			)
-
-			file, err = os.Open(full_name)
+			defer workers.Release()
+			ipkg, err := NewIpkgFromFile(name, *root_name, *add_md5, *add_sha1)
 			if err != nil {
-				log.Printf("openening %q: %v", full_name, err)
+				log.Printf("error: %v\n", err)
 				return
 			}
-			defer file.Close()
-
-			writer = append(writer, ioutil.Discard)
-			if *add_md5 {
-				md5er = md5.New()
-				writer = append(writer, md5er)
-			}
-			if *add_sha1 {
-				sha1er = sha1.New()
-				writer = append(writer, sha1er)
-			}
-
-			tee := io.TeeReader(file, io.MultiWriter(writer...))
-
-			control, err := ExtractControlFromIpk(tee)
-			if err != nil {
-				log.Printf("error: extract pkg-info from %q: %v", full_name, err)
-				return
-			}
-
-			ipkg := &Ipkg{Name: name, Control: control, Header: make(map[string]string)}
-
-			if err := ipkg.ControlToHeader(control); err != nil {
-				log.Printf("error: header parse error in %q: %v", full_name, err)
-				return
-			}
-
-			// consume the rest of the file to calculate md5/sha1
-			io.Copy(ioutil.Discard, tee)
-			file.Close() // close to free handles, 'collector' might block freeing otherwise
-
-			ipkg.FileInfo, _ = os.Lstat(full_name)
-			if md5er != nil {
-				ipkg.Md5 = hex.EncodeToString(md5er.Sum(nil))
-			}
-			if sha1er != nil {
-				ipkg.Sha1 = hex.EncodeToString(sha1er.Sum(nil))
-			}
-			ipkg.EnhanceHeader()
-
-			collector <- ipkg
+			packages.Lock()
+			packages.Entries[name] = ipkg
+			packages.Unlock()
 		}(entry)
 	}
-	jobs.Wait()
-	close(collector)
+	workers.Wait()
 
 	log.Println("done building index")
 	log.Printf("time to parse %d packages: %s\n", len(packages.Entries), time.Since(now))
@@ -162,4 +106,23 @@ func main() {
 	}
 
 	ServeHTTP(&packages, *root_name, gzipper, listen)
+}
+
+type WorkerPool struct {
+	sync.WaitGroup
+	worker chan bool
+}
+
+func NewWorkerPool(n int) *WorkerPool {
+	return &WorkerPool{worker: make(chan bool, n)}
+}
+
+func (pool *WorkerPool) Hire() {
+	pool.worker <- true
+	pool.Add(1)
+}
+
+func (pool *WorkerPool) Release() {
+	pool.Done()
+	<-pool.worker
 }

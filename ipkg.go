@@ -5,10 +5,16 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"crypto/md5"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
+	"hash"
 	"io"
+	"io/ioutil"
 	"net/textproto"
 	"os"
+	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -107,18 +113,6 @@ type PackageIndex struct {
 	Entries map[string]*Ipkg
 }
 
-func (pi *PackageIndex) CollectIpkgs(n int) IpkgChan {
-	ipkgs := make(IpkgChan, n)
-	go func() {
-		for ipkg := range ipkgs {
-			pi.Lock()
-			pi.Entries[ipkg.Name] = ipkg
-			pi.Unlock()
-		}
-	}()
-	return ipkgs
-}
-
 func (pi *PackageIndex) StringTo(w io.Writer) {
 	for _, name := range pi.SortedNames() {
 		entry := pi.Entries[name]
@@ -206,4 +200,59 @@ func ExtractControlFromIpk(reader io.Reader) (string, error) {
 		return "", fmt.Errorf("missing or empty 'control' file inside 'control.tar.gz'")
 	}
 	return buffer.String(), nil
+}
+
+func NewIpkgFromFile(name, root string, do_md5, do_sha1 bool) (*Ipkg, error) {
+
+	var (
+		full_name = path.Join(root, name)
+		file      *os.File
+		writer    []io.Writer = make([]io.Writer, 0, 3)
+		err       error
+		md5er     hash.Hash
+		sha1er    hash.Hash
+	)
+
+	file, err = os.Open(full_name)
+	if err != nil {
+		return nil, fmt.Errorf("openening %q: %v", full_name, err)
+	}
+	defer file.Close()
+
+	writer = append(writer, ioutil.Discard)
+	if do_md5 {
+		md5er = md5.New()
+		writer = append(writer, md5er)
+	}
+	if do_sha1 {
+		sha1er = sha1.New()
+		writer = append(writer, sha1er)
+	}
+
+	tee := io.TeeReader(file, io.MultiWriter(writer...))
+
+	control, err := ExtractControlFromIpk(tee)
+	if err != nil {
+		return nil, fmt.Errorf("error: extract pkg-info from %q: %v", full_name, err)
+	}
+
+	ipkg := &Ipkg{Name: name, Control: control, Header: make(map[string]string)}
+
+	if err := ipkg.ControlToHeader(control); err != nil {
+		return nil, fmt.Errorf("error: header parse error in %q: %v", full_name, err)
+	}
+
+	// consume the rest of the file to calculate md5/sha1
+	io.Copy(ioutil.Discard, tee)
+	file.Close() // close to free handles, 'collector' might block freeing otherwise
+
+	ipkg.FileInfo, _ = os.Lstat(full_name)
+	if md5er != nil {
+		ipkg.Md5 = hex.EncodeToString(md5er.Sum(nil))
+	}
+	if sha1er != nil {
+		ipkg.Sha1 = hex.EncodeToString(sha1er.Sum(nil))
+	}
+
+	return ipkg, nil
 }
