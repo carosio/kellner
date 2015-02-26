@@ -36,8 +36,6 @@ You should now have the *kellner* binary in your working directory.
 Right now *kellner*:
 
 - supports only .ipk packages
-- builds one index only (one would need multiple instances to serve architecture specific
-  packages for example)
 
 
 ### Name
