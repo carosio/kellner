@@ -70,6 +70,7 @@ func main() {
 	if *root_name == "" {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -root")
 	}
+	*root_name, _ = filepath.Abs(*root_name)
 
 	// simple use-case: scan one directory and dump the created
 	// packages-list to stdout.
@@ -118,7 +119,10 @@ func main() {
 		log.Printf("done building index for %q", path)
 		log.Printf("time to parse %d packages in %q: %s\n", len(packages.Entries), path, time.Since(now))
 
-		mux_path := "/" + path[len(*root_name):]
+		mux_path := path[len(*root_name):]
+		if mux_path == "" {
+			mux_path = "/"
+		}
 
 		// non-package directories
 		if len(packages.Entries) == 0 {
@@ -131,7 +135,8 @@ func main() {
 		return nil
 	})
 
-	log.Printf("serving")
+	log.Println()
+	log.Printf("serving at %s", "http://"+listen.Addr().String())
 	http.Serve(listen, nil)
 }
 
