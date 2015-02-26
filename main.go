@@ -22,8 +22,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"path"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -69,25 +71,84 @@ func main() {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -root")
 	}
 
-	root, err := os.Open(*root_name)
-	if err != nil {
-		fmt.Printf("error: opening -root %q: %v\n", *root_name, err)
-		os.Exit(1)
+	// simple use-case: scan one directory and dump the created
+	// packages-list to stdout.
+	if *dump_package_list {
+		now := time.Now()
+		log.Println("start building index from", *root_name)
+
+		packages, err := ScanDirectoryForPackages(*root_name, *nworkers, *add_md5, *add_sha1)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(2)
+		}
+		log.Println("done building index")
+		log.Printf("time to parse %d packages: %s\n", len(packages.Entries), time.Since(now))
+
+		os.Stdout.WriteString(packages.String())
+		return
 	}
 
-	log.Println("start building index from", *root_name)
-	now := time.Now()
+	// regular use-case: serve the given directory + the Packages file(s)
+	// recursively.
+
+	gzipper := Gzipper(GzGzipPipe)
+	if !*use_gzip {
+		gzipper = GzGolang
+	}
+
+	filepath.Walk(*root_name, func(path string, fi os.FileInfo, err error) error {
+
+		if !fi.IsDir() {
+			return nil
+		}
+
+		var (
+			packages *PackageIndex
+			now      = time.Now()
+		)
+
+		log.Printf("start building index for %q", path)
+
+		if packages, err = ScanDirectoryForPackages(path, *nworkers, *add_md5, *add_sha1); err != nil {
+			log.Printf("error: %v", err)
+			return nil
+		}
+
+		log.Printf("done building index for %q", path)
+		log.Printf("time to parse %d packages in %q: %s\n", len(packages.Entries), path, time.Since(now))
+
+		mux_path := "/" + path[len(*root_name):]
+
+		// non-package directories
+		if len(packages.Entries) == 0 {
+			http.Handle(mux_path, http.FileServer(http.Dir(path)))
+			return nil
+		}
+
+		AttachHttpHandler(http.DefaultServeMux, packages, mux_path, *root_name, gzipper)
+
+		return nil
+	})
+
+	log.Printf("serving")
+	http.Serve(listen, nil)
+}
+
+func ScanDirectoryForPackages(dir string, nworkers int, add_md5, add_sha1 bool) (*PackageIndex, error) {
+
+	root, err := os.Open(dir)
+	if err != nil {
+		return nil, fmt.Errorf("opening -root %q: %v\n", dir, err)
+	}
+
 	entries, err := root.Readdirnames(-1)
 	if err != nil {
-		fmt.Printf("error: reading dir entries from -root %q: %v\n", *root_name, err)
-		os.Exit(1)
+		return nil, fmt.Errorf("reading dir entries from -root %q: %v\n", dir, err)
 	}
 
-	//
-	// create package list
-	//
-	packages := PackageIndex{Entries: make(map[string]*Ipkg)}
-	workers := NewWorkerPool(*nworkers)
+	packages := &PackageIndex{Entries: make(map[string]*Ipkg)}
+	workers := NewWorkerPool(nworkers)
 
 	for _, entry := range entries {
 		if path.Ext(entry) != ".ipk" {
@@ -96,7 +157,7 @@ func main() {
 		workers.Hire()
 		go func(name string) {
 			defer workers.Release()
-			ipkg, err := NewIpkgFromFile(name, *root_name, *add_md5, *add_sha1)
+			ipkg, err := NewIpkgFromFile(name, dir, add_md5, add_sha1)
 			if err != nil {
 				log.Printf("error: %v\n", err)
 				return
@@ -107,21 +168,7 @@ func main() {
 		}(entry)
 	}
 	workers.Wait()
-
-	log.Println("done building index")
-	log.Printf("time to parse %d packages: %s\n", len(packages.Entries), time.Since(now))
-
-	if *dump_package_list {
-		os.Stdout.WriteString(packages.String())
-		return
-	}
-
-	gzipper := Gzipper(GzGzipPipe)
-	if !*use_gzip {
-		gzipper = GzGolang
-	}
-
-	ServeHTTP(&packages, *root_name, gzipper, listen)
+	return packages, nil
 }
 
 type WorkerPool struct {

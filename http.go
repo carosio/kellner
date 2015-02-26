@@ -11,13 +11,12 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"html/template"
 	"io"
 	"log"
-	"net"
 	"net/http"
 	"path"
 	"strings"
-	"text/template"
 	"time"
 )
 
@@ -27,6 +26,14 @@ type DirEntry struct {
 	Size     int64
 	RawDescr string
 	Descr    string
+}
+
+type RenderCtx struct {
+	Title       string
+	Entries     []DirEntry
+	SumFileSize int64
+	Date        time.Time
+	Version     string
 }
 
 const TEMPLATE = `<!doctype html>
@@ -66,7 +73,17 @@ This repository contains {{.Entries|len}} packages with an accumulated size of {
 <footer>{{.Version}} - generated at {{.Date}}</footer>
 `
 
-func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.Listener) {
+var IndexTemplate *template.Template
+
+func init() {
+	tmpl, err := template.New("index").Parse(TEMPLATE)
+	if err != nil {
+		panic(err)
+	}
+	IndexTemplate = tmpl
+}
+
+func AttachHttpHandler(mux *http.ServeMux, packages *PackageIndex, prefix, root string, gzipper Gzipper) {
 
 	now := time.Now()
 
@@ -97,20 +114,8 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 
 	index_handler := func() http.Handler {
 
-		tmpl, err := template.New("index").Parse(TEMPLATE)
-		if err != nil {
-			panic(err)
-		}
-
 		names := packages.SortedNames()
-
-		ctx := struct {
-			Title       string
-			Entries     []DirEntry
-			SumFileSize int64
-			Date        time.Time
-			Version     string
-		}{Title: "opkg-list", Version: VERSION, Date: now}
+		ctx := RenderCtx{Title: prefix + " - kellner", Version: VERSION, Date: time.Now()}
 
 		const n_meta_files = 3
 		ctx.Entries = make([]DirEntry, len(names)+n_meta_files)
@@ -124,14 +129,7 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 			ctx.SumFileSize += ipkg.FileInfo.Size()
 		}
 
-		index := bytes.NewBuffer(nil)
-		if err := tmpl.Execute(index, &ctx); err != nil {
-			panic(err)
-		}
-		index_gz := bytes.NewBuffer(nil)
-		gz := gzip.NewWriter(index_gz)
-		gz.Write(index.Bytes())
-		gz.Close()
+		index, index_gz := ctx.render(IndexTemplate)
 
 		// the actual index handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -143,7 +141,7 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 					return
 				}
 				io.WriteString(w, ipkg.Control)
-			} else if r.URL.Path == "/" {
+			} else if r.URL.Path == prefix || r.URL.Path == prefix+"/" {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
 					w.Write(index.Bytes())
@@ -157,12 +155,24 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 		})
 	}()
 
-	http.Handle("/Packages", logger(packages_handler))
-	http.Handle("/Packages.gz", logger(packages_gz_handler))
-	http.Handle("/Packages.stamps", logger(packages_stamps_handler))
-	http.Handle("/", logger(index_handler))
+	mux.Handle(prefix+"/", logger(index_handler))
+	mux.Handle(prefix+"/Packages", logger(packages_handler))
+	mux.Handle(prefix+"/Packages.gz", logger(packages_gz_handler))
+	mux.Handle(prefix+"/Packages.stamps", logger(packages_stamps_handler))
+}
 
-	http.Serve(listen, nil)
+func (ctx *RenderCtx) render(tmpl *template.Template) (index, index_gz *bytes.Buffer) {
+
+	index = bytes.NewBuffer(nil)
+	if err := IndexTemplate.Execute(index, ctx); err != nil {
+		panic(err)
+	}
+	index_gz = bytes.NewBuffer(nil)
+	gz := gzip.NewWriter(index_gz)
+	gz.Write(index.Bytes())
+	gz.Close()
+
+	return index, index_gz
 }
 
 // wraps 'orig_handler' to log incoming http-request
