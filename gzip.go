@@ -1,3 +1,11 @@
+// This file is part of *kellner*
+//
+// Copyright (C) 2015, Travelping GmbH <copyright@travelping.com>
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 package main
 
 import (
@@ -21,10 +29,9 @@ func GzGolang(w io.Writer, r io.Reader) error {
 	return nil
 }
 
-// use a pipe to 'gzip' to create the gz in a way
-// that opkg accepts the output. right now it's unclear
-// why opkg explodes when it hits a golang-native-created
-// gz file.
+// use a pipe to 'gzip' to create the .gz such that opkg
+// accepts the output. right now it's unclear why opkg explodes
+// when it hits a golang-native-created .gz file.
 func GzGzipPipe(w io.Writer, r io.Reader) error {
 	cmd := exec.Command("gzip", "-9", "-c")
 	cmd.Stdin = r

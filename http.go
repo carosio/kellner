@@ -1,3 +1,11 @@
+// This file is part of *kellner*
+//
+// Copyright (C) 2015, Travelping GmbH <copyright@travelping.com>
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 package main
 
 import (
@@ -24,9 +32,11 @@ type DirEntry struct {
 const TEMPLATE = `<!doctype html>
 <title>{{.Title}}</title>
 <style type="text/css">
+body { font-family: monospace }
 td, th { padding: auto 2em }
 .col-size { text-align: right }
 .col-modtime { white-space: nowrap }
+footer { margin-top: 1em; padding-top: 1em; border-top: 1px dotted silver }
 </style>
 
 <p>
@@ -38,19 +48,23 @@ This repository contains {{.Entries|len}} packages with an accumulated size of {
 			<th>Name</th>
 			<th>Last Modified</th>
 			<th>Size</th>
+			<th>Description</th>
 		</tr>
 	</thead>
 	<tbody>
 {{range .Entries}}
 	<tr>
 		<td class="col-link"><a href="{{.Name}}">{{.Name}}</a></td>
-		<td class="col-modtime">{{.ModTime.Format "2006-02-01 15:04:05" }}</td>
+		<td class="col-modtime">{{.ModTime.Format "2006-01-02T15:04:05Z07:00" }}</td>
 		<td class="col-size">{{.Size}}</td>
-		<td class="col-descr"><a href="{{.Name}}.control">{{.Descr}}</td>
+		<td class="col-descr"><a href="{{.Name}}.control" title="{{.RawDescr | html }}">{{.Descr}}</td>
 	</tr>
 {{end}}
 	</tbody>
-</table>`
+</table>
+
+<footer>{{.Version}} - generated at {{.Date}}</footer>
+`
 
 func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.Listener) {
 
@@ -94,7 +108,9 @@ func ServeHTTP(packages *PackageIndex, root string, gzipper Gzipper, listen net.
 			Title       string
 			Entries     []DirEntry
 			SumFileSize int64
-		}{Title: "opkg-list"}
+			Date        time.Time
+			Version     string
+		}{Title: "opkg-list", Version: VERSION, Date: now}
 
 		const n_meta_files = 3
 		ctx.Entries = make([]DirEntry, len(names)+n_meta_files)

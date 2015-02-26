@@ -1,23 +1,20 @@
 ## kellner - fast adhoc serving of packages
 
-*kellner* scans a given directory for known packages and creates an index. It then 
-acts as an httpd to be used by *opkg* or other package managers.
-
-*kellner* is pretty fast in creating the index: It takes ~3.8s on a Core-I5 to scan 
-4698 packages with a combined file size of 644Mbyte and providing the SHA1 and MD5
-for each of the packages.
+*kellner* scans a given directory for software packages and creates an index.
+It then acts as an adhoc httpd which serves the packages to *opkg* or other
+package managers.
 
 ### Usage
 
-	$> keller -root dir_full_of_packages/
+    $> keller -root dir_full_of_packages/
 
-
-    -bind=":8080": address to bind to
-    -dump=false: just dump the package list and exit
-    -md5=true: calculate md5 of scanned packages
-    -root="": directory containing the packages
-    -sha1=true: calculate sha1 of scanned packages
-    -workers=4: number of workers
+    -bind=":8080":   address to bind to
+    -dump=false:     just dump the package list and exit
+    -md5=true:       calculate md5 of scanned packages
+    -root="":        directory containing the packages
+    -sha1=true:      calculate sha1 of scanned packages
+    -version=false:  show version number
+    -workers=4:      number of workers
 
 
 ### Building
@@ -41,3 +38,11 @@ Right now *kellner*:
 - supports only .ipk packages
 - builds one index only (one would need multiple instances to serve architecture specific
   packages for example)
+
+
+### Name
+
+'Kellner' is the german term for 'waiter'. As such, a 'Kellner' serves /
+delivers things listed on a menu. *kellner* delivers packages, based upon a
+created index (the menu).
+

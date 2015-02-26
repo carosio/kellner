@@ -1,3 +1,11 @@
+// This file is part of *kellner*
+//
+// Copyright (C) 2015, Travelping GmbH <copyright@travelping.com>
+//
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 package main
 
 // *kellner* scans package files in a given directory
@@ -20,6 +28,8 @@ import (
 	"time"
 )
 
+const VERSION = "kellner-0.1"
+
 func main() {
 
 	var (
@@ -30,10 +40,16 @@ func main() {
 		add_md5           = flag.Bool("md5", true, "calculate md5 of scanned packages")
 		add_sha1          = flag.Bool("sha1", true, "calculate sha1 of scanned packages")
 		use_gzip          = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
+		show_version      = flag.Bool("version", false, "show version")
 		listen            net.Listener
 	)
 
 	flag.Parse()
+
+	if *show_version {
+		fmt.Println(VERSION)
+		return
+	}
 
 	if *bind == "" {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -bind\n")
@@ -117,11 +133,13 @@ func NewWorkerPool(n int) *WorkerPool {
 	return &WorkerPool{worker: make(chan bool, n)}
 }
 
+// hire / block a worker from the pool
 func (pool *WorkerPool) Hire() {
 	pool.worker <- true
 	pool.Add(1)
 }
 
+// release / unblock a blocked worker from the pool
 func (pool *WorkerPool) Release() {
 	pool.Done()
 	<-pool.worker
