@@ -98,6 +98,8 @@ func main() {
 		gzipper = GzGolang
 	}
 
+	indices := make([]string, 0)
+
 	filepath.Walk(*root_name, func(path string, fi os.FileInfo, err error) error {
 
 		if !fi.IsDir() {
@@ -132,8 +134,11 @@ func main() {
 
 		AttachHttpHandler(http.DefaultServeMux, packages, mux_path, *root_name, gzipper)
 
+		indices = append(indices, mux_path)
+
 		return nil
 	})
+	AttachOpkgRepoSnippet(http.DefaultServeMux, "/opkg.conf", indices)
 
 	log.Println()
 	log.Printf("serving at %s", "http://"+listen.Addr().String())

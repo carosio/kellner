@@ -11,6 +11,7 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
+	"fmt"
 	"html/template"
 	"io"
 	"log"
@@ -117,7 +118,7 @@ func AttachHttpHandler(mux *http.ServeMux, packages *PackageIndex, prefix, root 
 		names := packages.SortedNames()
 		ctx := RenderCtx{Title: prefix + " - kellner", Version: VERSION, Date: time.Now()}
 
-		const n_meta_files = 3
+		const n_meta_files = 4
 		ctx.Entries = make([]DirEntry, len(names)+n_meta_files)
 		ctx.Entries[0] = DirEntry{Name: "Packages", ModTime: now, Size: int64(packages_content.Len())}
 		ctx.Entries[1] = DirEntry{Name: "Packages.gz", ModTime: now, Size: int64(packages_content_gz.Len())}
@@ -173,6 +174,28 @@ func (ctx *RenderCtx) render(tmpl *template.Template) (index, index_gz *bytes.Bu
 	gz.Close()
 
 	return index, index_gz
+}
+
+// based upon 'feeds' create a opkg-repository snippet:
+//
+//   src/gz name-ipks http://host:port/name
+//   src/gz name2-ipks http://host:port/name2
+//
+// TODO: add that entry to the parent directory-handler "somehow"
+func AttachOpkgRepoSnippet(mux *http.ServeMux, mount string, feeds []string) {
+
+	mux.Handle(mount, logger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		scheme := r.URL.Scheme
+		if scheme == "" {
+			scheme = "http://"
+		}
+
+		for _, mux_path := range feeds {
+			repo_name := strings.Replace(mux_path[1:], "/", "-", -1)
+			fmt.Fprintf(w, "src/gz %s-ipks %s%s%s\n", repo_name, scheme, r.Host, mux_path)
+		}
+	})))
 }
 
 // wraps 'orig_handler' to log incoming http-request
