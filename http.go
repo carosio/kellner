@@ -44,6 +44,7 @@ body { font-family: monospace }
 td, th { padding: auto 2em }
 .col-size { text-align: right }
 .col-modtime { white-space: nowrap }
+.col-descr { white-space: nowrap }
 footer { margin-top: 1em; padding-top: 1em; border-top: 1px dotted silver }
 </style>
 
@@ -118,7 +119,7 @@ func AttachHttpHandler(mux *http.ServeMux, packages *PackageIndex, prefix, root 
 		names := packages.SortedNames()
 		ctx := RenderCtx{Title: prefix + " - kellner", Version: VERSION, Date: time.Now()}
 
-		const n_meta_files = 4
+		const n_meta_files = 3
 		ctx.Entries = make([]DirEntry, len(names)+n_meta_files)
 		ctx.Entries[0] = DirEntry{Name: "Packages", ModTime: now, Size: int64(packages_content.Len())}
 		ctx.Entries[1] = DirEntry{Name: "Packages.gz", ModTime: now, Size: int64(packages_content_gz.Len())}
