@@ -31,30 +31,31 @@ import (
 	"time"
 )
 
-const VERSION = "kellner-0.1"
+const VERSION = "kellner-0.2"
 
 func main() {
 
 	var (
-		nworkers          = flag.Int("workers", 4, "number of workers")
-		bind              = flag.String("bind", ":8080", "address to bind to")
-		root_name         = flag.String("root", "", "directory containing the packages")
-		dump_package_list = flag.Bool("dump", false, "just dump the package list and exit")
-		add_md5           = flag.Bool("md5", true, "calculate md5 of scanned packages")
-		add_sha1          = flag.Bool("sha1", true, "calculate sha1 of scanned packages")
-		use_gzip          = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
-		show_version      = flag.Bool("version", false, "show version")
+		nworkers        = flag.Int("workers", 4, "number of workers")
+		bind            = flag.String("bind", ":8080", "address to bind to")
+		rootName        = flag.String("root", "", "directory containing the packages")
+		dumpPackageList = flag.Bool("dump", false, "just dump the package list and exit")
+		addMd5          = flag.Bool("md5", true, "calculate md5 of scanned packages")
+		addSha1         = flag.Bool("sha1", true, "calculate sha1 of scanned packages")
+		useGzip         = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
+		showVersion     = flag.Bool("version", false, "show version")
 
 		sslKey               = flag.String("ssl-key", "", "PEM encoded ssl-key")
 		sslCert              = flag.String("ssl-cert", "", "PEM encoded ssl-cert")
 		sslRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
+		//sslClientMaps        = flag.String("client-map", "", "directory containing the client-mappings")
 
 		listen net.Listener
 	)
 
 	flag.Parse()
 
-	if *show_version {
+	if *showVersion {
 		fmt.Println(VERSION)
 		return
 	}
@@ -63,61 +64,19 @@ func main() {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -bind\n")
 		os.Exit(1)
 	}
-	if !*dump_package_list {
-		l, err := net.Listen("tcp", *bind)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: binding to %q failed: %v\n", *bind, err)
-			os.Exit(1)
-		}
-		listen = l
 
-		if *sslCert != "" || *sslKey != "" {
-
-			cert, err := tls.LoadX509KeyPair(*sslCert, *sslKey)
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "error: loading x509-keypair from %q - %q failed: %v\n", *sslCert, *sslKey, err)
-				os.Exit(2)
-			}
-
-			tlsConfig := &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				// disable ssl3 and tls1.0 (protect against beast, poodle etc)
-				MinVersion: tls.VersionTLS11,
-				NextProtos: []string{"http/1.1"},
-				// avoid rc4
-				CipherSuites: []uint16{
-					tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-					tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-					tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-					tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-				},
-			}
-			if *sslRequireClientCert {
-				tlsConfig.ClientAuth = tls.RequireAnyClientCert
-			}
-
-			listen = tls.NewListener(listen, tlsConfig)
-		}
-
-		log.Println("listen to", listen.Addr())
-	}
-
-	if *root_name == "" {
+	if *rootName == "" {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -root")
 	}
-	*root_name, _ = filepath.Abs(*root_name)
+	*rootName, _ = filepath.Abs(*rootName)
 
 	// simple use-case: scan one directory and dump the created
 	// packages-list to stdout.
-	if *dump_package_list {
+	if *dumpPackageList {
 		now := time.Now()
-		log.Println("start building index from", *root_name)
+		log.Println("start building index from", *rootName)
 
-		packages, err := ScanDirectoryForPackages(*root_name, *nworkers, *add_md5, *add_sha1)
+		packages, err := ScanDirectoryForPackages(*rootName, *nworkers, *addMd5, *addSha1)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(2)
@@ -131,15 +90,57 @@ func main() {
 
 	// regular use-case: serve the given directory + the Packages file(s)
 	// recursively.
+	//
+	// setup the listener: either ssl or pure tcp
+	l, err := net.Listen("tcp", *bind)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: binding to %q failed: %v\n", *bind, err)
+		os.Exit(1)
+	}
+	listen = l
+
+	if *sslCert != "" || *sslKey != "" {
+
+		cert, err := tls.LoadX509KeyPair(*sslCert, *sslKey)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error: loading x509-keypair from %q - %q failed: %v\n", *sslCert, *sslKey, err)
+			os.Exit(2)
+		}
+
+		tlsConfig := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			// disable ssl3 and tls1.0 (protect against beast, poodle etc)
+			MinVersion: tls.VersionTLS11,
+			NextProtos: []string{"http/1.1"},
+			// avoid rc4
+			CipherSuites: []uint16{
+				tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+			},
+		}
+		if *sslRequireClientCert {
+			tlsConfig.ClientAuth = tls.RequireAnyClientCert
+		}
+
+		listen = tls.NewListener(listen, tlsConfig)
+	}
+
+	log.Println("listen to", listen.Addr())
 
 	gzipper := Gzipper(GzGzipPipe)
-	if !*use_gzip {
+	if !*useGzip {
 		gzipper = GzGolang
 	}
 
 	indices := make([]string, 0)
 
-	filepath.Walk(*root_name, func(path string, fi os.FileInfo, err error) error {
+	filepath.Walk(*rootName, func(path string, fi os.FileInfo, err error) error {
 
 		if !fi.IsDir() {
 			return nil
@@ -152,7 +153,7 @@ func main() {
 
 		log.Printf("start building index for %q", path)
 
-		if packages, err = ScanDirectoryForPackages(path, *nworkers, *add_md5, *add_sha1); err != nil {
+		if packages, err = ScanDirectoryForPackages(path, *nworkers, *addMd5, *addSha1); err != nil {
 			log.Printf("error: %v", err)
 			return nil
 		}
@@ -160,31 +161,35 @@ func main() {
 		log.Printf("done building index for %q", path)
 		log.Printf("time to parse %d packages in %q: %s\n", len(packages.Entries), path, time.Since(now))
 
-		mux_path := path[len(*root_name):]
-		if mux_path == "" {
-			mux_path = "/"
+		muxPath := path[len(*rootName):]
+		if muxPath == "" {
+			muxPath = "/"
 		}
 
 		// non-package directories
 		if len(packages.Entries) == 0 {
-			http.Handle(mux_path, http.FileServer(http.Dir(path)))
+			http.Handle(muxPath, http.FileServer(http.Dir(path)))
 			return nil
 		}
 
-		AttachHttpHandler(http.DefaultServeMux, packages, mux_path, *root_name, gzipper)
+		AttachHttpHandler(http.DefaultServeMux, packages, muxPath, *rootName, gzipper)
 
-		indices = append(indices, mux_path)
+		indices = append(indices, muxPath)
 
 		return nil
 	})
 	AttachOpkgRepoSnippet(http.DefaultServeMux, "/opkg.conf", indices)
 
 	log.Println()
-	log.Printf("serving at %s", "http://"+listen.Addr().String())
+	proto := "http://"
+	if *sslKey != "" {
+		proto = "https://"
+	}
+	log.Printf("serving at %s", proto+listen.Addr().String())
 	http.Serve(listen, nil)
 }
 
-func ScanDirectoryForPackages(dir string, nworkers int, add_md5, add_sha1 bool) (*PackageIndex, error) {
+func ScanDirectoryForPackages(dir string, nworkers int, addMd5, addSha1 bool) (*PackageIndex, error) {
 
 	root, err := os.Open(dir)
 	if err != nil {
@@ -206,7 +211,7 @@ func ScanDirectoryForPackages(dir string, nworkers int, add_md5, add_sha1 bool) 
 		workers.Hire()
 		go func(name string) {
 			defer workers.Release()
-			ipkg, err := NewIpkgFromFile(name, dir, add_md5, add_sha1)
+			ipkg, err := NewIpkgFromFile(name, dir, addMd5, addSha1)
 			if err != nil {
 				log.Printf("error: %v\n", err)
 				return
