@@ -64,14 +64,14 @@ func pkixNameToBytes(name *pkix.Name, cleanValues bool) []byte {
 			continue
 		}
 
-		oldLen := len(buf.Bytes())
 		if buf.Len() > 0 {
 			io.WriteString(buf, ",")
 		}
 
+		oldLen := len(buf.Bytes())
 		fmt.Fprintf(buf, "%s=%s", key, entry.Value)
 		if cleanValues {
-			cleanPkixNameBytes(buf.Bytes()[oldLen+len(key)+1+1:])
+			cleanPkixNameBytes(buf.Bytes()[oldLen+len(key)+1:])
 		}
 	}
 
