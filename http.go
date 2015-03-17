@@ -207,7 +207,15 @@ func logger(orig_handler http.Handler) http.Handler {
 		if status_log.Code == 0 {
 			status_log.Code = 200
 		}
-		log.Println(r.RemoteAddr, r.Method, status_log.Code, r.Host, r.RequestURI, r.Header)
+
+		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
+			log.Println(r.RemoteAddr, r.Method, status_log.Code, r.Host, r.RequestURI, r.Header)
+			return
+		}
+
+		// TODO: handle more than the first certificate
+		clientId := clientIdByName(&r.TLS.PeerCertificates[0].Subject)
+		log.Println(r.RemoteAddr, clientId, r.Method, status_log.Code, r.Host, r.RequestURI, r.Header)
 	})
 }
 

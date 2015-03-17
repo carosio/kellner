@@ -18,6 +18,7 @@ package main
 // * opkg-make-index from the opkg-utils collection
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -43,7 +44,12 @@ func main() {
 		add_sha1          = flag.Bool("sha1", true, "calculate sha1 of scanned packages")
 		use_gzip          = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
 		show_version      = flag.Bool("version", false, "show version")
-		listen            net.Listener
+
+		sslKey               = flag.String("ssl-key", "", "PEM encoded ssl-key")
+		sslCert              = flag.String("ssl-cert", "", "PEM encoded ssl-cert")
+		sslRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
+
+		listen net.Listener
 	)
 
 	flag.Parse()
@@ -64,7 +70,40 @@ func main() {
 			os.Exit(1)
 		}
 		listen = l
-		log.Println("listen to", l.Addr())
+
+		if *sslCert != "" || *sslKey != "" {
+
+			cert, err := tls.LoadX509KeyPair(*sslCert, *sslKey)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error: loading x509-keypair from %q - %q failed: %v\n", *sslCert, *sslKey, err)
+				os.Exit(2)
+			}
+
+			tlsConfig := &tls.Config{
+				Certificates: []tls.Certificate{cert},
+				// disable ssl3 and tls1.0 (protect against beast, poodle etc)
+				MinVersion: tls.VersionTLS11,
+				NextProtos: []string{"http/1.1"},
+				// avoid rc4
+				CipherSuites: []uint16{
+					tls.TLS_RSA_WITH_AES_128_CBC_SHA,
+					tls.TLS_RSA_WITH_AES_256_CBC_SHA,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
+					tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
+					tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
+					tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
+					tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
+				},
+			}
+			if *sslRequireClientCert {
+				tlsConfig.ClientAuth = tls.RequireAnyClientCert
+			}
+
+			listen = tls.NewListener(listen, tlsConfig)
+		}
+
+		log.Println("listen to", listen.Addr())
 	}
 
 	if *root_name == "" {
