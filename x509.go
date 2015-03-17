@@ -2,32 +2,90 @@ package main
 
 import (
 	"bytes"
-	_ "crypto/sha256"
-	_ "crypto/sha512"
 	"crypto/x509/pkix"
 	"fmt"
-	"strings"
+	"io"
+
+	// enforce linking of several crypto-hashes
+	_ "crypto/sha256"
+	_ "crypto/sha512"
 )
 
-func clientIdByName(name *pkix.Name) string {
+// lookup table. it's a short table, we just scan it linear in pkixNameToBytes()
+// the values are taken from http://golang.org/src/crypto/x509/pkix/pkix.go, see
+// oidCountry, oidCommonName etc.
+var oidToKeys = [...]struct {
+	oid [4]int
+	key string
+}{
+	{[4]int{2, 5, 4, 6}, "C"},   // country
+	{[4]int{2, 5, 4, 10}, "O"},  // organization
+	{[4]int{2, 5, 4, 11}, "OU"}, // organizational unit
+	{[4]int{2, 5, 4, 3}, "CN"},  // common name
+	{[4]int{2, 5, 4, 5}, "SN"},  // serial number
+	{[4]int{2, 5, 4, 7}, "L"},   // locality
+	{[4]int{2, 5, 4, 8}, "P"},   // province
+	{[4]int{2, 5, 4, 9}, "S"},   // street // TODO: check correct key
+	{[4]int{2, 5, 4, 17}, "PC"}, // postal code // TODO: check correct key
+}
+
+// returns a serialized version of 'name' for each known
+// asn1.object-identifier ("key") in the form:
+//  key1=value1,key2=value2,key3=value3...
+//
+func pkixNameToBytes(name *pkix.Name) []byte {
 
 	buf := bytes.NewBuffer(nil)
+	for i := range name.Names {
 
-	write := func(key, val string, prepend_comma bool) {
-		if val == "" {
-			return
+		entry := &name.Names[i]
+		key := ""
+		for j := 0; j < len(oidToKeys); j++ {
+			if len(entry.Type) == 4 &&
+				entry.Type[0] == oidToKeys[j].oid[0] &&
+				entry.Type[1] == oidToKeys[j].oid[1] &&
+				entry.Type[2] == oidToKeys[j].oid[2] &&
+				entry.Type[3] == oidToKeys[j].oid[3] {
+
+				key = oidToKeys[j].key
+				break
+			}
 		}
-		if prepend_comma {
-			fmt.Fprint(buf, ",")
+
+		if key == "" {
+			continue
 		}
-		fmt.Fprintf(buf, "%s=%s", key, val)
+
+		if buf.Len() > 0 {
+			io.WriteString(buf, ",")
+		}
+		fmt.Fprintf(buf, "%s=%s", key, entry.Value)
 	}
 
-	write("CN", name.CommonName, false)
-	write("O", strings.Join(name.Organization, "_"), buf.Len() > 0)
-	write("OU", strings.Join(name.OrganizationalUnit, "_"), buf.Len() > 0)
-	write("O", strings.Join(name.Country, "_"), buf.Len() > 0)
-	write("O", strings.Join(name.Locality, "_"), buf.Len() > 0)
+	return buf.Bytes()
+}
 
-	return buf.String()
+// replace any [^a-zA-Z0-9_-] by a '_'
+func cleanPkixNameBytes(in []byte) {
+	for i := range in {
+		c := in[i]
+		switch {
+		default:
+			in[i] = '_'
+		case '0' <= c && c <= '9':
+		case 'a' <= c && c <= 'z':
+		case 'A' <= c && c <= 'Z':
+		case c == '_', c == '-':
+		}
+	}
+}
+
+// returns a "normalized" variant of the pkix.Name
+// which might be used as a file on disk
+func clientIdByName(name *pkix.Name) string {
+
+	nameBytes := pkixNameToBytes(name)
+	cleanPkixNameBytes(nameBytes)
+
+	return string(nameBytes)
 }
