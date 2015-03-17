@@ -11,6 +11,14 @@ import (
 	_ "crypto/sha512"
 )
 
+// returns a "normalized" variant of the pkix.Name
+// which might be used as a file on disk
+func clientIdByName(name *pkix.Name) string {
+
+	nameBytes := pkixNameToBytes(name, true)
+	return string(nameBytes)
+}
+
 // lookup table. it's a short table, we just scan it linear in pkixNameToBytes()
 // the values are taken from http://golang.org/src/crypto/x509/pkix/pkix.go, see
 // oidCountry, oidCommonName etc.
@@ -33,7 +41,7 @@ var oidToKeys = [...]struct {
 // asn1.object-identifier ("key") in the form:
 //  key1=value1,key2=value2,key3=value3...
 //
-func pkixNameToBytes(name *pkix.Name) []byte {
+func pkixNameToBytes(name *pkix.Name, cleanValues bool) []byte {
 
 	buf := bytes.NewBuffer(nil)
 	for i := range name.Names {
@@ -56,10 +64,15 @@ func pkixNameToBytes(name *pkix.Name) []byte {
 			continue
 		}
 
+		oldLen := len(buf.Bytes())
 		if buf.Len() > 0 {
 			io.WriteString(buf, ",")
 		}
+
 		fmt.Fprintf(buf, "%s=%s", key, entry.Value)
+		if cleanValues {
+			cleanPkixNameBytes(buf.Bytes()[oldLen+len(key)+1+1:])
+		}
 	}
 
 	return buf.Bytes()
@@ -78,14 +91,4 @@ func cleanPkixNameBytes(in []byte) {
 		case c == '_', c == '-':
 		}
 	}
-}
-
-// returns a "normalized" variant of the pkix.Name
-// which might be used as a file on disk
-func clientIdByName(name *pkix.Name) string {
-
-	nameBytes := pkixNameToBytes(name)
-	cleanPkixNameBytes(nameBytes)
-
-	return string(nameBytes)
 }
