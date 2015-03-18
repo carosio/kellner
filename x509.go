@@ -15,7 +15,7 @@ import (
 // which might be used as a file on disk
 func clientIdByName(name *pkix.Name) string {
 
-	nameBytes := pkixNameToBytes(name, true)
+	nameBytes := typeValsToBytes(name.Names, true)
 	return string(nameBytes)
 }
 
@@ -41,12 +41,12 @@ var oidToKeys = [...]struct {
 // asn1.object-identifier ("key") in the form:
 //  key1=value1,key2=value2,key3=value3...
 //
-func pkixNameToBytes(name *pkix.Name, cleanValues bool) []byte {
+func typeValsToBytes(names []pkix.AttributeTypeAndValue, cleanValues bool) []byte {
 
 	buf := bytes.NewBuffer(nil)
-	for i := range name.Names {
+	for i := range names {
 
-		entry := &name.Names[i]
+		entry := &names[i]
 		key := ""
 		for j := 0; j < len(oidToKeys); j++ {
 			if len(entry.Type) == 4 &&
