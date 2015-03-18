@@ -131,7 +131,7 @@ func main() {
 		listen = tls.NewListener(listen, tlsConfig)
 	}
 
-	log.Println("listen to", listen.Addr())
+	log.Println("listen on", listen.Addr())
 
 	gzipper := Gzipper(GzGzipPipe)
 	if !*useGzip {
@@ -141,8 +141,9 @@ func main() {
 	// the root-muxer is used either directly (non-ssl-client-cert case) or
 	// as a lookup-pool for ClientIdMuxer to get the real worker
 	rootMuxer := http.NewServeMux()
-	indices := make([]string, 0)
 
+	startTime := time.Now()
+	indices := make([]string, 0)
 	filepath.Walk(*rootName, func(path string, fi os.FileInfo, err error) error {
 
 		if !fi.IsDir() {
@@ -183,6 +184,10 @@ func main() {
 	})
 	// TODO: this is specific to non-client-id situations
 	AttachOpkgRepoSnippet(rootMuxer, "/opkg.conf", indices)
+
+	log.Println()
+	log.Printf("processed %d package-folders in %s", len(indices), time.Since(startTime))
+
 	var httpHandler http.Handler = rootMuxer
 	httpHandler = logRequests(httpHandler)
 
