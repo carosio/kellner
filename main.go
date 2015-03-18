@@ -41,7 +41,7 @@ func main() {
 		rootName        = flag.String("root", "", "directory containing the packages")
 		dumpPackageList = flag.Bool("dump", false, "just dump the package list and exit")
 		addMd5          = flag.Bool("md5", true, "calculate md5 of scanned packages")
-		addSha1         = flag.Bool("sha1", true, "calculate sha1 of scanned packages")
+		addSha1         = flag.Bool("sha1", false, "calculate sha1 of scanned packages")
 		useGzip         = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
 		showVersion     = flag.Bool("version", false, "show version")
 
