@@ -11,12 +11,12 @@ author "Helge Sychla <helge.sychla@travelping.com>"
 #
 # ip and port to bind to
 env KELLNER_IP=0.0.0.0
-#env KELLNER_PORT=80
+env KELLNER_PORT=80
 #env KELLNER_PORT=443
 # PEM encoded ssl-certificate
-env KELLNER_SSL_CERT=/etc/ssl/certs/example.com.crt
+#env KELLNER_SSL_CERT=/etc/ssl/certs/example.com.crt
 # PEM encoded ssl-key
-env KELLNER_SSL_KEY=/etc/ssl/private/example.com.key
+#env KELLNER_SSL_KEY=/etc/ssl/private/example.com.key
 # directory containing the packages
 env KELLNER_ROOT=/var/www/example.com/packages/
 # number of workers
@@ -32,7 +32,7 @@ env KELLNER_MD5=true
 # calculate sha1 of scanned packages
 env KELLNER_SHA1=false
 # log to given filename
-env KELLNER_LOG=/var/log/kellner.pkg.log
+env KELLNER_LOG=/var/log/kellner.log
 
 exec /usr/sbin/kellner -bind=$KELLNER_IP:$KELLNER_PORT \
                        -root=$KELLNER_ROOT \
