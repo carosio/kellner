@@ -21,13 +21,16 @@ import (
 	"crypto/tls"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -43,7 +46,8 @@ func main() {
 		addMd5          = flag.Bool("md5", true, "calculate md5 of scanned packages")
 		addSha1         = flag.Bool("sha1", false, "calculate sha1 of scanned packages")
 		useGzip         = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
-		showVersion     = flag.Bool("version", false, "show version")
+		showVersion     = flag.Bool("version", false, "show version and exit")
+		logFileName     = flag.String("log", "", "log to given filename")
 
 		sslKey               = flag.String("ssl-key", "", "PEM encoded ssl-key")
 		sslCert              = flag.String("ssl-cert", "", "PEM encoded ssl-cert")
@@ -51,6 +55,7 @@ func main() {
 		sslClientIdMuxRoot   = flag.String("client-map", "", "directory containing the client-mappings")
 
 		listen net.Listener
+		err    error
 	)
 
 	flag.Parse()
@@ -67,8 +72,60 @@ func main() {
 
 	if *rootName == "" {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -root")
+		os.Exit(1)
 	}
 	*rootName, _ = filepath.Abs(*rootName)
+
+	var logger io.Writer = os.Stderr
+	var logFile *os.File
+	if *logFileName != "" {
+		logFile, err = os.Create(*logFileName)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "can't create -log %q: %v", *logFileName, err)
+			os.Exit(1)
+		}
+		logger = io.MultiWriter(os.Stderr, logFile)
+	}
+	log.SetOutput(logger)
+
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		// NOTE: USR1 does not exist on windows
+		signal.Notify(sigChan, syscall.SIGUSR1)
+		for sig := range sigChan {
+			switch sig {
+			case syscall.SIGUSR1:
+
+				if logFile == nil {
+					break
+				}
+
+				// a USR1 indicates that the user wants to re-open the logfile.
+				// assumption: user or logrotate has moved / renamed the file: we
+				// still have the handle to the file but the name is gone. so,
+				// we create a new file (and truncate! an existing one). if the
+				// user wants to keep appending to that file he would not have
+				// triggered USR1.
+				log.Printf("received USR1, recreating log file")
+
+				// first create the new file
+				newLogFile, err := os.Create(*logFileName)
+				if err != nil {
+					log.Printf("error: can't create -log %q after USR1: %v", *logFileName, err)
+					break
+				}
+
+				// switch to new logger
+				newLogger := io.MultiWriter(os.Stderr, newLogFile)
+				log.SetOutput(newLogger)
+
+				// cleanup
+				logFile.Close()
+				logFile = newLogFile
+				logger = newLogger
+			}
+		}
+	}()
 
 	// simple use-case: scan one directory and dump the created
 	// packages-list to stdout.
