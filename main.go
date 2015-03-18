@@ -138,6 +138,9 @@ func main() {
 		gzipper = GzGolang
 	}
 
+	// the root-muxer is used either directly (non-ssl-client-cert case) or
+	// as a lookup-pool for ClientIdMuxer to get the real worker
+	rootMuxer := http.NewServeMux()
 	indices := make([]string, 0)
 
 	filepath.Walk(*rootName, func(path string, fi os.FileInfo, err error) error {
@@ -168,17 +171,20 @@ func main() {
 
 		// non-package directories
 		if len(packages.Entries) == 0 {
-			http.Handle(muxPath, http.FileServer(http.Dir(path)))
+			rootMuxer.Handle(muxPath, http.FileServer(http.Dir(path)))
 			return nil
 		}
 
-		AttachHttpHandler(http.DefaultServeMux, packages, muxPath, *rootName, gzipper)
+		AttachHttpHandler(rootMuxer, packages, muxPath, *rootName, gzipper)
 
 		indices = append(indices, muxPath)
 
 		return nil
 	})
-	AttachOpkgRepoSnippet(http.DefaultServeMux, "/opkg.conf", indices)
+	// TODO: this is specific to non-client-id situations
+	AttachOpkgRepoSnippet(rootMuxer, "/opkg.conf", indices)
+	var httpHandler http.Handler = rootMuxer
+	httpHandler = logRequests(httpHandler)
 
 	log.Println()
 	proto := "http://"
@@ -186,7 +192,7 @@ func main() {
 		proto = "https://"
 	}
 	log.Printf("serving at %s", proto+listen.Addr().String())
-	http.Serve(listen, nil)
+	http.Serve(listen, httpHandler)
 }
 
 func ScanDirectoryForPackages(dir string, nworkers int, addMd5, addSha1 bool) (*PackageIndex, error) {

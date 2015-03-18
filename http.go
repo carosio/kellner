@@ -157,10 +157,10 @@ func AttachHttpHandler(mux *http.ServeMux, packages *PackageIndex, prefix, root 
 		})
 	}()
 
-	mux.Handle(prefix+"/", logger(index_handler))
-	mux.Handle(prefix+"/Packages", logger(packages_handler))
-	mux.Handle(prefix+"/Packages.gz", logger(packages_gz_handler))
-	mux.Handle(prefix+"/Packages.stamps", logger(packages_stamps_handler))
+	mux.Handle(prefix+"/", index_handler)
+	mux.Handle(prefix+"/Packages", packages_handler)
+	mux.Handle(prefix+"/Packages.gz", packages_gz_handler)
+	mux.Handle(prefix+"/Packages.stamps", packages_stamps_handler)
 }
 
 func (ctx *RenderCtx) render(tmpl *template.Template) (index, index_gz *bytes.Buffer) {
@@ -185,7 +185,7 @@ func (ctx *RenderCtx) render(tmpl *template.Template) (index, index_gz *bytes.Bu
 // TODO: add that entry to the parent directory-handler "somehow"
 func AttachOpkgRepoSnippet(mux *http.ServeMux, mount string, feeds []string) {
 
-	mux.Handle(mount, logger(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	mux.Handle(mount, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
 		scheme := r.URL.Scheme
 		if scheme == "" {
@@ -196,14 +196,27 @@ func AttachOpkgRepoSnippet(mux *http.ServeMux, mount string, feeds []string) {
 			repo_name := strings.Replace(mux_path[1:], "/", "-", -1)
 			fmt.Fprintf(w, "src/gz %s-ipks %s%s%s\n", repo_name, scheme, r.Host, mux_path)
 		}
-	})))
+	}))
 }
 
+const _EXTRA_LOG_KEY = "kellner-log-data"
+
 // wraps 'orig_handler' to log incoming http-request
-func logger(orig_handler http.Handler) http.Handler {
+func logRequests(handler http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+
+		// NOTE: maybe a dopey idea: let the http-handlers attach logging
+		// data to the request. pro: it hijacks a data structure meant to transport
+		// external data
+		//
+		// only internal handlers are allowed to attach data to the
+		// request to hand log-data over to this handler here. to make
+		// sure external sources do not have control over our logs: delete
+		// any existing data before starting the handler-chain.
+		r.Header.Del(_EXTRA_LOG_KEY)
+
 		status_log := logStatusCode{ResponseWriter: w}
-		orig_handler.ServeHTTP(&status_log, r)
+		handler.ServeHTTP(&status_log, r)
 		if status_log.Code == 0 {
 			status_log.Code = 200
 		}
