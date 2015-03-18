@@ -48,7 +48,7 @@ func main() {
 		sslKey               = flag.String("ssl-key", "", "PEM encoded ssl-key")
 		sslCert              = flag.String("ssl-cert", "", "PEM encoded ssl-cert")
 		sslRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
-		//sslClientMaps        = flag.String("client-map", "", "directory containing the client-mappings")
+		sslClientIdMuxRoot   = flag.String("client-map", "", "directory containing the client-mappings")
 
 		listen net.Listener
 	)
@@ -189,6 +189,13 @@ func main() {
 	log.Printf("processed %d package-folders in %s", len(indices), time.Since(startTime))
 
 	var httpHandler http.Handler = rootMuxer
+	if *sslClientIdMuxRoot != "" {
+		httpHandler = &ClientIdMuxer{
+			IdRoot:    *sslClientIdMuxRoot,
+			RootMuxer: rootMuxer,
+		}
+	}
+
 	httpHandler = logRequests(httpHandler)
 
 	log.Println()
