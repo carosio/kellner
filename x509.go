@@ -2,9 +2,12 @@ package main
 
 import (
 	"bytes"
+	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"io/ioutil"
 
 	// enforce linking of several crypto-hashes
 	_ "crypto/sha256"
@@ -17,6 +20,43 @@ func clientIdByName(name *pkix.Name) string {
 
 	nameBytes := typeValsToBytes(name.Names, true)
 	return string(nameBytes)
+}
+
+func printClientIdTo(w io.Writer, certFile string) error {
+	var (
+		cert          *x509.Certificate
+		block         *pem.Block
+		rawBytes, err = ioutil.ReadFile(certFile)
+	)
+
+	if err != nil {
+		return err
+	}
+
+	for {
+		block, rawBytes = pem.Decode(rawBytes)
+		if block == nil {
+			break
+		}
+		if block.Type != "CERTIFICATE" || len(block.Headers) != 0 {
+			continue
+		}
+
+		if cert, err = x509.ParseCertificate(block.Bytes); err != nil {
+			return nil
+		}
+
+		break
+	}
+
+	if cert == nil {
+		return fmt.Errorf("cert file %q does not contain a certicate", certFile)
+	}
+
+	clientId := clientIdByName(&cert.Subject)
+	fmt.Fprintf(w, "%s\n", clientId)
+
+	return nil
 }
 
 // lookup table. it's a short table, we just scan it linear in pkixNameToBytes()

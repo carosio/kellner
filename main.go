@@ -53,6 +53,7 @@ func main() {
 		sslCert              = flag.String("ssl-cert", "", "PEM encoded ssl-cert")
 		sslRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
 		sslClientIdMuxRoot   = flag.String("client-map", "", "directory containing the client-mappings")
+		printClientCert      = flag.String("client-id-for", "", "print client-id for given .cert and exit")
 
 		listen net.Listener
 		err    error
@@ -62,6 +63,14 @@ func main() {
 
 	if *showVersion {
 		fmt.Println(VERSION)
+		return
+	}
+
+	if *printClientCert != "" {
+		if err = printClientIdTo(os.Stdout, *printClientCert); err != nil {
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
+			os.Exit(1)
+		}
 		return
 	}
 
