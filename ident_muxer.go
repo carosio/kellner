@@ -111,7 +111,7 @@ func (muxer *ClientIdMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	r.Header.Add(_EXTRA_LOG_KEY,
 		fmt.Sprintf("mappedRequest %q: %s => %s (based on matching handler for %q",
-			clientDir, r.URL.Path, mappedRequest.URL.Path, matchingPattern))
+			clientId, r.URL.Path, mappedRequest.URL.Path, matchingPattern))
 
 	handler.ServeHTTP(w, &mappedRequest)
 }
