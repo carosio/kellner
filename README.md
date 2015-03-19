@@ -25,8 +25,7 @@ get one or go to http://golang.org/dl.
 Once you have a working go compiler:
 
 	$> cd kellner
-	$> export GOPATH=`pwd`
-	$> go get -v -d
+	$> export GOPATH=`pwd`:`pwd`/vendor
 	$> go build -v
 
 You should now have the *kellner* binary in your working directory.
