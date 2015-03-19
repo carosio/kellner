@@ -8,10 +8,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-
-	// enforce linking of several crypto-hashes
-	_ "crypto/sha256"
-	_ "crypto/sha512"
 )
 
 // returns a "normalized" variant of the pkix.Name

@@ -18,7 +18,6 @@ package main
 // * opkg-make-index from the opkg-utils collection
 
 import (
-	"crypto/tls"
 	"flag"
 	"fmt"
 	"io"
@@ -51,6 +50,7 @@ func main() {
 
 		sslKey               = flag.String("ssl-key", "", "PEM encoded ssl-key")
 		sslCert              = flag.String("ssl-cert", "", "PEM encoded ssl-cert")
+		sslClientCas         = flag.String("ssl-client-cas", "", "PEM encoded list of ssl-certs containing the CAs")
 		sslRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
 		sslClientIdMuxRoot   = flag.String("client-map", "", "directory containing the client-mappings")
 		printClientCert      = flag.String("client-id-for", "", "print client-id for given .cert and exit")
@@ -143,34 +143,18 @@ func main() {
 
 	if *sslCert != "" || *sslKey != "" {
 
-		cert, err := tls.LoadX509KeyPair(*sslCert, *sslKey)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: loading x509-keypair from %q - %q failed: %v\n", *sslCert, *sslKey, err)
+		var tlsOpts = tlsOptions{
+			keyFileName:       *sslKey,
+			certFileName:      *sslCert,
+			requireClientCert: *sslRequireClientCert,
+			clientCasFileName: *sslClientCas,
+		}
+
+		if listen, err = initTLS(listen, &tlsOpts); err != nil {
+
+			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(2)
 		}
-
-		tlsConfig := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			// disable ssl3 and tls1.0 (protect against beast, poodle etc)
-			MinVersion: tls.VersionTLS11,
-			NextProtos: []string{"http/1.1"},
-			// avoid rc4
-			CipherSuites: []uint16{
-				tls.TLS_RSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_RSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA,
-				tls.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256,
-				tls.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256,
-			},
-		}
-		if *sslRequireClientCert {
-			tlsConfig.ClientAuth = tls.RequireAnyClientCert
-		}
-
-		listen = tls.NewListener(listen, tlsConfig)
 	}
 
 	log.Println("listen on", listen.Addr())
