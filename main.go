@@ -99,39 +99,15 @@ func main() {
 
 	go func() {
 		sigChan := make(chan os.Signal, 1)
-		// NOTE: USR1 does not exist on windows
-		signal.Notify(sigChan, syscall.SIGUSR1)
+		signal.Notify(sigChan, syscall.SIGUSR1) // NOTE: USR1 does not exist on windows
 		for sig := range sigChan {
 			switch sig {
 			case syscall.SIGUSR1:
 
-				if logFile == nil {
-					break
-				}
-
-				// a USR1 indicates that the user wants to re-open the logfile.
-				// assumption: user or logrotate has moved / renamed the file: we
-				// still have the handle to the file but the name is gone. so,
-				// we create a new file (and truncate! an existing one). if the
-				// user wants to keep appending to that file he would not have
-				// triggered USR1.
 				log.Printf("received USR1, recreating log file")
 
-				// first create the new file
-				newLogFile, err := os.Create(*logFileName)
-				if err != nil {
-					log.Printf("error: can't create -log %q after USR1: %v", *logFileName, err)
-					break
-				}
-
-				// switch to new logger
-				newLogger := io.MultiWriter(os.Stderr, newLogFile)
-				log.SetOutput(newLogger)
-
-				// cleanup
-				logFile.Close()
-				logFile = newLogFile
-				logger = newLogger
+				logFile, logger = rotateLog(logFile, logger)
+				log.SetOutput(logger)
 			}
 		}
 	}()
