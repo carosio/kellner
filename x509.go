@@ -46,7 +46,7 @@ func printClientIdTo(w io.Writer, certFile string) error {
 	}
 
 	if cert == nil {
-		return fmt.Errorf("cert file %q does not contain a certicate", certFile)
+		return fmt.Errorf("cert file %q does not contain a certificate", certFile)
 	}
 
 	clientId := clientIdByName(&cert.Subject)
