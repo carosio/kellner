@@ -1,4 +1,5 @@
 /var/log/kellner.log {
+    su root root
     daily
     missingok
     rotate 30
@@ -6,5 +7,5 @@
     notifempty
     sharedscripts
     postrotate
-        pkill -f kellner -s SIGUSR1
+        pkill -f kellner -SIGUSR1
     endscript
