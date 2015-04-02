@@ -88,7 +88,7 @@ func main() {
 	var logger io.Writer = os.Stderr
 	var logFile *os.File
 	if *logFileName != "" {
-		logFile, err = os.Create(*logFileName)
+		logFile, err = os.OpenFile(*logFileName, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "can't create -log %q: %v", *logFileName, err)
 			os.Exit(1)
