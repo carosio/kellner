@@ -18,6 +18,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 )
 
 // the Identity-folder contains a bunch of subfolders. the name of each subfolder is
@@ -50,10 +51,10 @@ func (muxer *ClientIdMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cert := r.TLS.PeerCertificates[0]
-	clientId := clientIdByName(&cert.Subject)
+	clientID := clientIdByName(&cert.Subject)
 
 	// TODO: do we want this?
-	w.Header().Set("Kellner-Client-Id", clientId)
+	w.Header().Set("Kellner-Client-Id", clientID)
 
 	// TODO: decide how we treat "/" requests ...
 	// we could deliver opkg.conf containing all the valid repos
@@ -63,23 +64,46 @@ func (muxer *ClientIdMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// TODO: optionally: try to be less and less specific by cutting
-	// elements from []cert.Subject.Names
+	var (
+		requestedPath = path.Clean(r.URL.Path)
+		mapFile       string
+		fi            os.FileInfo
+		err           error
+	)
 
-	clientDir := filepath.Join(muxer.IdRoot, clientId)
+	// try to cut away components from the clientID and
+	// and find a mapping file
+	for clientID != "" {
 
-	requestedPath := path.Clean(r.URL.Path)
-	mapFile := filepath.Join(clientDir, requestedPath)
-	// try different map-files
-	fi, err := os.Lstat(mapFile)
-	if err != nil {
-		requestedPath = path.Dir(requestedPath)
-		mapFile = filepath.Join(clientDir, requestedPath)
-		fi, err = os.Lstat(mapFile)
-		if err != nil {
-			writeError(http.StatusForbidden, w, r)
-			return
+		pos := strings.LastIndexAny(clientID, ",")
+		if pos <= 0 {
+			break
 		}
+
+		clientDir := filepath.Join(muxer.IdRoot, clientID)
+
+		// first try  /cdir/request/file.ipk
+		// than       /cdir/request
+		//
+		// both should find the mapping file /cdir/request
+		// TODO:      /cidr/request/subfolder/file.ipk
+		mapFile = filepath.Join(clientDir, requestedPath)
+		if fi, err = os.Lstat(mapFile); err != nil {
+			requestedPath = path.Dir(requestedPath)
+			mapFile = filepath.Join(clientDir, requestedPath)
+			fi, err = os.Lstat(mapFile)
+		}
+
+		if fi != nil {
+			break
+		}
+
+		clientID = clientID[:pos]
+	}
+
+	if fi == nil {
+		http.NotFound(w, r)
+		return
 	}
 
 	// TODO: decide how to treat a directory
@@ -111,7 +135,7 @@ func (muxer *ClientIdMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	r.Header.Add(_EXTRA_LOG_KEY,
 		fmt.Sprintf("mappedRequest %q: %s => %s (based on matching handler for %q",
-			clientId, r.URL.Path, mappedRequest.URL.Path, matchingPattern))
+			clientID, r.URL.Path, mappedRequest.URL.Path, matchingPattern))
 
 	handler.ServeHTTP(w, &mappedRequest)
 }
