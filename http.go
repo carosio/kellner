@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-type DirEntry struct {
+type dirEntry struct {
 	Name     string
 	ModTime  time.Time
 	Size     int64
@@ -29,15 +29,15 @@ type DirEntry struct {
 	Descr    string
 }
 
-type RenderCtx struct {
+type renderCtx struct {
 	Title       string
-	Entries     []DirEntry
+	Entries     []dirEntry
 	SumFileSize int64
 	Date        time.Time
 	Version     string
 }
 
-const TEMPLATE = `<!doctype html>
+const _Template = `<!doctype html>
 <title>{{.Title}}</title>
 <style type="text/css">
 body { font-family: monospace }
@@ -75,74 +75,74 @@ This repository contains {{.Entries|len}} packages with an accumulated size of {
 <footer>{{.Version}} - generated at {{.Date}}</footer>
 `
 
-var IndexTemplate *template.Template
+var indexTemplate *template.Template
 
 func init() {
-	tmpl, err := template.New("index").Parse(TEMPLATE)
+	tmpl, err := template.New("index").Parse(_Template)
 	if err != nil {
 		panic(err)
 	}
-	IndexTemplate = tmpl
+	indexTemplate = tmpl
 }
 
-func AttachHttpHandler(mux *http.ServeMux, packages *PackageIndex, prefix, root string, gzipper Gzipper) {
+func attachHTTPHandler(mux *http.ServeMux, packages *packageIndex, prefix, root string, gzipper gzWrite) {
 
 	now := time.Now()
 
-	packages_stamps := bytes.NewBuffer(nil)
-	packages_content := bytes.NewBuffer(nil)
-	packages_content_gz := bytes.NewBuffer(nil)
-	packages.StringTo(packages_content)
-	gzipper(packages_content_gz, bytes.NewReader(packages_content.Bytes()))
-	packages.StampsTo(packages_stamps)
+	packagesStamps := bytes.NewBuffer(nil)
+	packagesContent := bytes.NewBuffer(nil)
+	packagesContentGz := bytes.NewBuffer(nil)
+	packages.StringTo(packagesContent)
+	gzipper(packagesContentGz, bytes.NewReader(packagesContent.Bytes()))
+	packages.StampsTo(packagesStamps)
 
-	packages_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	packagesHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
-			http.ServeContent(w, r, "Packages", now, bytes.NewReader(packages_content.Bytes()))
+			http.ServeContent(w, r, "Packages", now, bytes.NewReader(packagesContent.Bytes()))
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
 		w.Header().Set("Content-Encoding", "gzip")
-		http.ServeContent(w, r, "Packages", now, bytes.NewReader(packages_content_gz.Bytes()))
+		http.ServeContent(w, r, "Packages", now, bytes.NewReader(packagesContentGz.Bytes()))
 	})
 
-	packages_gz_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeContent(w, r, "Packages.gz", now, bytes.NewReader(packages_content_gz.Bytes()))
+	packagesGzHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "Packages.gz", now, bytes.NewReader(packagesContentGz.Bytes()))
 	})
 
-	packages_stamps_handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.ServeContent(w, r, "Packages.stamps", now, bytes.NewReader(packages_stamps.Bytes()))
+	packagesStampsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.ServeContent(w, r, "Packages.stamps", now, bytes.NewReader(packagesStamps.Bytes()))
 	})
 
-	index_handler := func() http.Handler {
+	indexHandler := func() http.Handler {
 
 		names := packages.SortedNames()
-		ctx := RenderCtx{Title: prefix + " - kellner", Version: VERSION, Date: time.Now()}
+		ctx := renderCtx{Title: prefix + " - kellner", Version: versionString, Date: time.Now()}
 
-		const n_meta_files = 3
-		ctx.Entries = make([]DirEntry, len(names)+n_meta_files)
-		ctx.Entries[0] = DirEntry{Name: "Packages", ModTime: now, Size: int64(packages_content.Len())}
-		ctx.Entries[1] = DirEntry{Name: "Packages.gz", ModTime: now, Size: int64(packages_content_gz.Len())}
-		ctx.Entries[2] = DirEntry{Name: "Packages.stamps", ModTime: now, Size: int64(packages_stamps.Len())}
+		const nMetaFiles = 3
+		ctx.Entries = make([]dirEntry, len(names)+nMetaFiles)
+		ctx.Entries[0] = dirEntry{Name: "Packages", ModTime: now, Size: int64(packagesContent.Len())}
+		ctx.Entries[1] = dirEntry{Name: "Packages.gz", ModTime: now, Size: int64(packagesContentGz.Len())}
+		ctx.Entries[2] = dirEntry{Name: "Packages.stamps", ModTime: now, Size: int64(packagesStamps.Len())}
 
 		for i, name := range names {
-			ipkg := packages.Entries[name]
-			ctx.Entries[i+n_meta_files] = ipkg.DirEntry()
-			ctx.SumFileSize += ipkg.FileInfo.Size()
+			entry := packages.Entries[name]
+			ctx.Entries[i+nMetaFiles] = entry.DirEntry()
+			ctx.SumFileSize += entry.FileInfo.Size()
 		}
 
-		index, index_gz := ctx.render(IndexTemplate)
+		index, indexGz := ctx.render(indexTemplate)
 
 		// the actual index handler
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if strings.HasSuffix(r.URL.Path, ".control") {
-				ipkg_name := r.URL.Path[:len(r.URL.Path)-8]
-				ipkg, ok := packages.Entries[path.Base(ipkg_name)]
+				entryName := r.URL.Path[:len(r.URL.Path)-8]
+				entry, ok := packages.Entries[path.Base(entryName)]
 				if !ok {
 					http.NotFound(w, r)
 					return
 				}
-				io.WriteString(w, ipkg.Control)
+				io.WriteString(w, entry.Control)
 			} else if r.URL.Path == prefix || r.URL.Path == prefix+"/" {
 				w.Header().Set("Content-Type", "text/html; charset=utf-8")
 				if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
@@ -150,31 +150,31 @@ func AttachHttpHandler(mux *http.ServeMux, packages *PackageIndex, prefix, root 
 					return
 				}
 				w.Header().Set("Content-Encoding", "gzip")
-				w.Write(index_gz.Bytes())
+				w.Write(indexGz.Bytes())
 			} else {
 				http.ServeFile(w, r, path.Join(root, r.URL.Path))
 			}
 		})
 	}()
 
-	mux.Handle(prefix+"/", index_handler)
-	mux.Handle(prefix+"/Packages", packages_handler)
-	mux.Handle(prefix+"/Packages.gz", packages_gz_handler)
-	mux.Handle(prefix+"/Packages.stamps", packages_stamps_handler)
+	mux.Handle(prefix+"/", indexHandler)
+	mux.Handle(prefix+"/Packages", packagesHandler)
+	mux.Handle(prefix+"/Packages.gz", packagesGzHandler)
+	mux.Handle(prefix+"/Packages.stamps", packagesStampsHandler)
 }
 
-func (ctx *RenderCtx) render(tmpl *template.Template) (index, index_gz *bytes.Buffer) {
+func (ctx *renderCtx) render(tmpl *template.Template) (index, indexGz *bytes.Buffer) {
 
 	index = bytes.NewBuffer(nil)
-	if err := IndexTemplate.Execute(index, ctx); err != nil {
+	if err := indexTemplate.Execute(index, ctx); err != nil {
 		panic(err)
 	}
-	index_gz = bytes.NewBuffer(nil)
-	gz := gzip.NewWriter(index_gz)
+	indexGz = bytes.NewBuffer(nil)
+	gz := gzip.NewWriter(indexGz)
 	gz.Write(index.Bytes())
 	gz.Close()
 
-	return index, index_gz
+	return index, indexGz
 }
 
 // based upon 'feeds' create a opkg-repository snippet:
@@ -183,7 +183,7 @@ func (ctx *RenderCtx) render(tmpl *template.Template) (index, index_gz *bytes.Bu
 //   src/gz name2-ipks http://host:port/name2
 //
 // TODO: add that entry to the parent directory-handler "somehow"
-func AttachOpkgRepoSnippet(mux *http.ServeMux, mount string, feeds []string) {
+func attachOpkgRepoSnippet(mux *http.ServeMux, mount string, feeds []string) {
 
 	mux.Handle(mount, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 
@@ -192,14 +192,14 @@ func AttachOpkgRepoSnippet(mux *http.ServeMux, mount string, feeds []string) {
 			scheme = "http://"
 		}
 
-		for _, mux_path := range feeds {
-			repo_name := strings.Replace(mux_path[1:], "/", "-", -1)
-			fmt.Fprintf(w, "src/gz %s-ipks %s%s%s\n", repo_name, scheme, r.Host, mux_path)
+		for _, muxPath := range feeds {
+			repoName := strings.Replace(muxPath[1:], "/", "-", -1)
+			fmt.Fprintf(w, "src/gz %s-ipks %s%s%s\n", repoName, scheme, r.Host, muxPath)
 		}
 	}))
 }
 
-const _EXTRA_LOG_KEY = "kellner-log-data"
+const _ExtraLogKey = "kellner-log-data"
 
 // wraps 'orig_handler' to log incoming http-request
 func logRequests(handler http.Handler) http.Handler {
@@ -213,22 +213,22 @@ func logRequests(handler http.Handler) http.Handler {
 		// request to hand log-data over to this handler here. to make
 		// sure external sources do not have control over our logs: delete
 		// any existing data before starting the handler-chain.
-		r.Header.Del(_EXTRA_LOG_KEY)
+		r.Header.Del(_ExtraLogKey)
 
-		status_log := logStatusCode{ResponseWriter: w}
-		handler.ServeHTTP(&status_log, r)
-		if status_log.Code == 0 {
-			status_log.Code = 200
+		statusLog := logStatusCode{ResponseWriter: w}
+		handler.ServeHTTP(&statusLog, r)
+		if statusLog.Code == 0 {
+			statusLog.Code = 200
 		}
 
 		if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
-			log.Println(r.RemoteAddr, r.Method, status_log.Code, r.Host, r.RequestURI, r.Header)
+			log.Println(r.RemoteAddr, r.Method, statusLog.Code, r.Host, r.RequestURI, r.Header)
 			return
 		}
 
 		// TODO: handle more than the first certificate
-		clientId := clientIdByName(&r.TLS.PeerCertificates[0].Subject)
-		log.Println(r.RemoteAddr, clientId, r.Method, status_log.Code, r.Host, r.RequestURI, r.Header)
+		clientID := clientIDByName(&r.TLS.PeerCertificates[0].Subject)
+		log.Println(r.RemoteAddr, clientID, r.Method, statusLog.Code, r.Host, r.RequestURI, r.Header)
 	})
 }
 

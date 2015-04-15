@@ -33,7 +33,7 @@ import (
 	"time"
 )
 
-const VERSION = "kellner-0.2"
+const versionString = "kellner-0.3"
 
 func main() {
 
@@ -52,7 +52,7 @@ func main() {
 		sslCert              = flag.String("ssl-cert", "", "PEM encoded ssl-cert")
 		sslClientCas         = flag.String("ssl-client-cas", "", "PEM encoded list of ssl-certs containing the CAs")
 		sslRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
-		sslClientIdMuxRoot   = flag.String("client-map", "", "directory containing the client-mappings")
+		sslClientIDMuxRoot   = flag.String("client-map", "", "directory containing the client-mappings")
 		printClientCert      = flag.String("client-id-for", "", "print client-id for given .cert and exit")
 
 		listen net.Listener
@@ -62,12 +62,12 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println(VERSION)
+		fmt.Println(versionString)
 		return
 	}
 
 	if *printClientCert != "" {
-		if err = printClientIdTo(os.Stdout, *printClientCert); err != nil {
+		if err = printClientIDTo(os.Stdout, *printClientCert); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(1)
 		}
@@ -118,7 +118,7 @@ func main() {
 		now := time.Now()
 		log.Println("start building index from", *rootName)
 
-		packages, err := ScanDirectoryForPackages(*rootName, *nworkers, *addMd5, *addSha1)
+		packages, err := scanDirectoryForPackages(*rootName, *nworkers, *addMd5, *addSha1)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(2)
@@ -159,9 +159,9 @@ func main() {
 
 	log.Println("listen on", listen.Addr())
 
-	gzipper := Gzipper(GzGzipPipe)
+	gzwrite := gzWrite(gzGzipPipe)
 	if !*useGzip {
-		gzipper = GzGolang
+		gzwrite = gzGolang
 	}
 
 	// the root-muxer is used either directly (non-ssl-client-cert case) or
@@ -169,7 +169,7 @@ func main() {
 	rootMuxer := http.NewServeMux()
 
 	startTime := time.Now()
-	indices := make([]string, 0)
+	var indices = make([]string, 0)
 	filepath.Walk(*rootName, func(path string, fi os.FileInfo, err error) error {
 
 		if !fi.IsDir() {
@@ -177,13 +177,13 @@ func main() {
 		}
 
 		var (
-			packages *PackageIndex
+			packages *packageIndex
 			now      = time.Now()
 		)
 
 		log.Printf("start building index for %q", path)
 
-		if packages, err = ScanDirectoryForPackages(path, *nworkers, *addMd5, *addSha1); err != nil {
+		if packages, err = scanDirectoryForPackages(path, *nworkers, *addMd5, *addSha1); err != nil {
 			log.Printf("error: %v", err)
 			return nil
 		}
@@ -202,23 +202,23 @@ func main() {
 			return nil
 		}
 
-		AttachHttpHandler(rootMuxer, packages, muxPath, *rootName, gzipper)
+		attachHTTPHandler(rootMuxer, packages, muxPath, *rootName, gzwrite)
 
 		indices = append(indices, muxPath)
 
 		return nil
 	})
 	// TODO: this is specific to non-client-id situations
-	AttachOpkgRepoSnippet(rootMuxer, "/opkg.conf", indices)
+	attachOpkgRepoSnippet(rootMuxer, "/opkg.conf", indices)
 
 	log.Println()
 	log.Printf("processed %d package-folders in %s", len(indices), time.Since(startTime))
 
 	var httpHandler http.Handler = rootMuxer
-	if *sslClientIdMuxRoot != "" {
-		httpHandler = &ClientIdMuxer{
-			IdRoot:    *sslClientIdMuxRoot,
-			RootMuxer: rootMuxer,
+	if *sslClientIDMuxRoot != "" {
+		httpHandler = &clientIDMuxer{
+			Folder: *sslClientIDMuxRoot,
+			Muxer:  rootMuxer,
 		}
 	}
 
@@ -233,7 +233,7 @@ func main() {
 	http.Serve(listen, httpHandler)
 }
 
-func ScanDirectoryForPackages(dir string, nworkers int, addMd5, addSha1 bool) (*PackageIndex, error) {
+func scanDirectoryForPackages(dir string, nworkers int, addMd5, addSha1 bool) (*packageIndex, error) {
 
 	root, err := os.Open(dir)
 	if err != nil {
@@ -245,8 +245,8 @@ func ScanDirectoryForPackages(dir string, nworkers int, addMd5, addSha1 bool) (*
 		return nil, fmt.Errorf("reading dir entries from -root %q: %v\n", dir, err)
 	}
 
-	packages := &PackageIndex{Entries: make(map[string]*Ipkg)}
-	workers := NewWorkerPool(nworkers)
+	packages := &packageIndex{Entries: make(map[string]*ipkArchive)}
+	workers := newWorkerPool(nworkers)
 
 	for _, entry := range entries {
 		if path.Ext(entry) != ".ipk" {
@@ -255,13 +255,13 @@ func ScanDirectoryForPackages(dir string, nworkers int, addMd5, addSha1 bool) (*
 		workers.Hire()
 		go func(name string) {
 			defer workers.Release()
-			ipkg, err := NewIpkgFromFile(name, dir, addMd5, addSha1)
+			archive, err := newIpkFromFile(name, dir, addMd5, addSha1)
 			if err != nil {
 				log.Printf("error: %v\n", err)
 				return
 			}
 			packages.Lock()
-			packages.Entries[name] = ipkg
+			packages.Entries[name] = archive
 			packages.Unlock()
 		}(entry)
 	}
@@ -269,23 +269,23 @@ func ScanDirectoryForPackages(dir string, nworkers int, addMd5, addSha1 bool) (*
 	return packages, nil
 }
 
-type WorkerPool struct {
+type workerPool struct {
 	sync.WaitGroup
 	worker chan bool
 }
 
-func NewWorkerPool(n int) *WorkerPool {
-	return &WorkerPool{worker: make(chan bool, n)}
+func newWorkerPool(n int) *workerPool {
+	return &workerPool{worker: make(chan bool, n)}
 }
 
 // hire / block a worker from the pool
-func (pool *WorkerPool) Hire() {
+func (pool *workerPool) Hire() {
 	pool.worker <- true
 	pool.Add(1)
 }
 
 // release / unblock a blocked worker from the pool
-func (pool *WorkerPool) Release() {
+func (pool *workerPool) Release() {
 	pool.Done()
 	<-pool.worker
 }

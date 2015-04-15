@@ -35,15 +35,15 @@ import (
 //                     special [ipk-folder2] (text file, containing "ipk-folder2",
 //                                            maps request "/special" to /root/ipk-folder2 )
 //
-type ClientIdMuxer struct {
-	IdRoot    string         // folder to use for lookup client-id-requests
-	RootMuxer *http.ServeMux // hold the real worker
+type clientIDMuxer struct {
+	Folder string         // folder to use for lookup client-id-requests
+	Muxer  *http.ServeMux // hold the real worker
 }
 
 // looks up the first certificate to get the client-id. based upon the client-id
 // we lookup the client-directory and, based upon the request, the mapping to the
 // real handler.
-func (muxer *ClientIdMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (muxer *clientIDMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if r.TLS == nil || len(r.TLS.PeerCertificates) == 0 {
 		writeError(http.StatusUnauthorized, w, r)
@@ -51,7 +51,7 @@ func (muxer *ClientIdMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cert := r.TLS.PeerCertificates[0]
-	clientID := clientIdByName(&cert.Subject)
+	clientID := clientIDByName(&cert.Subject)
 
 	// TODO: do we want this?
 	w.Header().Set("Kellner-Client-Id", clientID)
@@ -80,7 +80,7 @@ func (muxer *ClientIdMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 
-		clientDir := filepath.Join(muxer.IdRoot, clientID)
+		clientDir := filepath.Join(muxer.Folder, clientID)
 
 		// first try  /cdir/request/file.ipk
 		// than       /cdir/request
@@ -131,9 +131,9 @@ func (muxer *ClientIdMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	mappedRequest.URL.Path = cleanPath(path.Join(mappedPath, path.Base(r.URL.Path)))
 	mappedRequest.RequestURI = mappedRequest.URL.Path
 
-	handler, matchingPattern := muxer.RootMuxer.Handler(&mappedRequest)
+	handler, matchingPattern := muxer.Muxer.Handler(&mappedRequest)
 
-	r.Header.Add(_EXTRA_LOG_KEY,
+	r.Header.Add(_ExtraLogKey,
 		fmt.Sprintf("mappedRequest %q: %s => %s (based on matching handler for %q",
 			clientID, r.URL.Path, mappedRequest.URL.Path, matchingPattern))
 

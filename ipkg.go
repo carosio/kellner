@@ -31,7 +31,7 @@ import (
 	"github.com/blakesmith/ar"
 )
 
-type Ipkg struct {
+type ipkArchive struct {
 	Name     string
 	Control  string // content of 'control' file
 	Header   map[string]string
@@ -40,12 +40,12 @@ type Ipkg struct {
 	Sha1     string
 }
 
-// parses 'control' and stores the result in ipkg.Header
-func (ipkg *Ipkg) ControlToHeader(control string) error {
+// ControlToHeader parses 'control' and stores the result in ipkg.Header
+func (ipk *ipkArchive) ControlToHeader(control string) error {
 	reader := bufio.NewReader(strings.NewReader(control))
-	proto_reader := textproto.NewReader(reader)
+	protoReader := textproto.NewReader(reader)
 	for {
-		line, err := proto_reader.ReadContinuedLine()
+		line, err := protoReader.ReadContinuedLine()
 		if err == io.EOF {
 			break
 		}
@@ -54,75 +54,82 @@ func (ipkg *Ipkg) ControlToHeader(control string) error {
 			return fmt.Errorf("invalid package-field %q", line)
 		}
 
-		ipkg.Header[line[:i]] = strings.TrimSpace(line[i+1:])
+		ipk.Header[line[:i]] = strings.TrimSpace(line[i+1:])
 	}
 	return nil
 }
 
-func (ipkg *Ipkg) EnhanceHeader() {
-	ipkg.Header["Size"] = strconv.FormatInt(ipkg.FileInfo.Size(), 10)
-	if ipkg.Md5 != "" {
-		ipkg.Header["MD5Sum"] = ipkg.Md5
+func (ipk *ipkArchive) EnhanceHeader() {
+	ipk.Header["Size"] = strconv.FormatInt(ipk.FileInfo.Size(), 10)
+	if ipk.Md5 != "" {
+		ipk.Header["MD5Sum"] = ipk.Md5
 	}
-	if ipkg.Sha1 != "" {
-		ipkg.Header["SHA1"] = ipkg.Sha1
+	if ipk.Sha1 != "" {
+		ipk.Header["SHA1"] = ipk.Sha1
 	}
 }
 
-func (ipkg *Ipkg) DirEntry() DirEntry {
+func (ipk *ipkArchive) DirEntry() dirEntry {
 
-	descr := ipkg.Header["Description"]
+	descr := ipk.Header["Description"]
 	if len(descr) > 64 {
 		descr = descr[:64] + "..."
 	}
 
-	return DirEntry{
-		Name:     ipkg.Name,
-		ModTime:  ipkg.FileInfo.ModTime(),
-		Size:     ipkg.FileInfo.Size(),
+	return dirEntry{
+		Name:     ipk.Name,
+		ModTime:  ipk.FileInfo.ModTime(),
+		Size:     ipk.FileInfo.Size(),
 		Descr:    descr,
-		RawDescr: ipkg.Header["Description"],
+		RawDescr: ipk.Header["Description"],
 	}
 }
 
+// HeaderTo writes the package-header to 'to'.
 // according to https://www.debian.org/doc/debian-policy/ch-controlfields.html
 // the order of the fields does not matter
 // according to https://wiki.debian.org/RepositoryFormat#A.22Packages.22_Indices
 // 'Packages' should be the first field.
-func (ipkg *Ipkg) HeaderTo(w io.Writer) {
+func (ipk *ipkArchive) HeaderTo(w io.Writer) {
 
-	p, ok := ipkg.Header["Package"]
+	p, ok := ipk.Header["Package"]
 	if ok {
 		fmt.Fprintf(w, "Package: %s\n", p)
 	}
 
-	for key := range ipkg.Header {
+	for key := range ipk.Header {
 		if key != "Package" {
-			fmt.Fprintf(w, "%s: %s\n", key, ipkg.Header[key])
+			fmt.Fprintf(w, "%s: %s\n", key, ipk.Header[key])
 		}
 	}
 }
 
-func (ipkg *Ipkg) ControlAndChecksumTo(w io.Writer) {
-	io.WriteString(w, ipkg.Control)
-	fmt.Fprintf(w, "Filename: %s\n", ipkg.Name)
-	fmt.Fprintf(w, "Size: %d\n", ipkg.FileInfo.Size())
-	if ipkg.Md5 != "" {
-		fmt.Fprintf(w, "MD5Sum: %s\n", ipkg.Md5)
+// ControlAndChecksumTo writes the 'control' file,
+// the file name, the size and the checksums to the
+// writer 'w'
+func (ipk *ipkArchive) ControlAndChecksumTo(w io.Writer) {
+	io.WriteString(w, ipk.Control)
+	fmt.Fprintf(w, "Filename: %s\n", ipk.Name)
+	fmt.Fprintf(w, "Size: %d\n", ipk.FileInfo.Size())
+	if ipk.Md5 != "" {
+		fmt.Fprintf(w, "MD5Sum: %s\n", ipk.Md5)
 	}
-	if ipkg.Sha1 != "" {
-		fmt.Fprintf(w, "SHA1: %s\n", ipkg.Sha1)
+	if ipk.Sha1 != "" {
+		fmt.Fprintf(w, "SHA1: %s\n", ipk.Sha1)
 	}
 }
 
-type IpkgChan chan *Ipkg
+type ipkArchiveChan chan *ipkArchive
 
-type PackageIndex struct {
+type packageIndex struct {
 	sync.Mutex
-	Entries map[string]*Ipkg
+	Entries map[string]*ipkArchive
 }
 
-func (pi *PackageIndex) StringTo(w io.Writer) {
+// StringTo writes all control data and checksums
+// to write 'w'. Essentially it creates a
+// a 'Packages' file
+func (pi *packageIndex) StringTo(w io.Writer) {
 	for _, name := range pi.SortedNames() {
 		entry := pi.Entries[name]
 		entry.ControlAndChecksumTo(w)
@@ -130,20 +137,21 @@ func (pi *PackageIndex) StringTo(w io.Writer) {
 	}
 }
 
-func (pi *PackageIndex) StampsTo(w io.Writer) {
+// StampsTo writes all timestamps to write 'w'
+func (pi *packageIndex) StampsTo(w io.Writer) {
 	for _, name := range pi.SortedNames() {
 		entry := pi.Entries[name]
 		fmt.Fprintf(w, "%d %s\n", entry.FileInfo.ModTime().Unix(), name)
 	}
 }
 
-func (pi *PackageIndex) String() string {
+func (pi *packageIndex) String() string {
 	buf := bytes.NewBuffer(nil)
 	pi.StringTo(buf)
 	return buf.String()
 }
 
-func (pi *PackageIndex) SortedNames() []string {
+func (pi *packageIndex) SortedNames() []string {
 	var (
 		names = make([]string, len(pi.Entries))
 		i     int
@@ -159,17 +167,17 @@ func (pi *PackageIndex) SortedNames() []string {
 // extract 'control' file from 'reader'. the contents of a 'control' file
 // is a set of key-value pairs as described in
 // https://www.debian.org/doc/debian-policy/ch-controlfields.html
-func ExtractControlFromIpk(reader io.Reader) (string, error) {
+func extractControlFromIpk(reader io.Reader) (string, error) {
 
 	var (
-		ar_reader  *ar.Reader
-		tar_reader *tar.Reader
-		gz_reader  *gzip.Reader
+		arReader  *ar.Reader
+		tarReader *tar.Reader
+		gzReader  *gzip.Reader
 	)
 
-	ar_reader = ar.NewReader(reader)
+	arReader = ar.NewReader(reader)
 	for {
-		header, err := ar_reader.Next()
+		header, err := arReader.Next()
 		if err != nil && err != io.EOF {
 			return "", fmt.Errorf("extracting contents: %v", err)
 		} else if header == nil {
@@ -178,20 +186,20 @@ func ExtractControlFromIpk(reader io.Reader) (string, error) {
 
 		// NOTE: strangeley the name of the files end with a "/" ... content error?
 		if header.Name == "control.tar.gz/" || header.Name == "control.tar.gz" {
-			gz_reader, err = gzip.NewReader(ar_reader)
+			gzReader, err = gzip.NewReader(arReader)
 			break
 		}
 	}
 
-	if gz_reader == nil {
+	if gzReader == nil {
 		return "", fmt.Errorf("missing control.tar.gz file")
 	}
-	defer gz_reader.Close()
+	defer gzReader.Close()
 
 	buffer := bytes.NewBuffer(nil)
-	tar_reader = tar.NewReader(gz_reader)
+	tarReader = tar.NewReader(gzReader)
 	for {
-		header, err := tar_reader.Next()
+		header, err := tarReader.Next()
 		if err != nil && err != io.EOF {
 			return "", fmt.Errorf("extracting control.tar.gz: %v", err)
 		} else if header == nil {
@@ -201,7 +209,7 @@ func ExtractControlFromIpk(reader io.Reader) (string, error) {
 			continue
 		}
 
-		io.Copy(buffer, tar_reader)
+		io.Copy(buffer, tarReader)
 		break
 	}
 
@@ -211,57 +219,57 @@ func ExtractControlFromIpk(reader io.Reader) (string, error) {
 	return buffer.String(), nil
 }
 
-func NewIpkgFromFile(name, root string, do_md5, do_sha1 bool) (*Ipkg, error) {
+func newIpkFromFile(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error) {
 
 	var (
-		full_name = path.Join(root, name)
-		file      *os.File
-		writer    []io.Writer = make([]io.Writer, 0, 3)
-		err       error
-		md5er     hash.Hash
-		sha1er    hash.Hash
+		fullName = path.Join(root, name)
+		file     *os.File
+		writer   = make([]io.Writer, 0, 3)
+		err      error
+		md5er    hash.Hash
+		sha1er   hash.Hash
 	)
 
-	file, err = os.Open(full_name)
+	file, err = os.Open(fullName)
 	if err != nil {
-		return nil, fmt.Errorf("openening %q: %v", full_name, err)
+		return nil, fmt.Errorf("openening %q: %v", fullName, err)
 	}
 	defer file.Close()
 
 	writer = append(writer, ioutil.Discard)
-	if do_md5 {
+	if doMD5 {
 		md5er = md5.New()
 		writer = append(writer, md5er)
 	}
-	if do_sha1 {
+	if doSHA1 {
 		sha1er = sha1.New()
 		writer = append(writer, sha1er)
 	}
 
 	tee := io.TeeReader(file, io.MultiWriter(writer...))
 
-	control, err := ExtractControlFromIpk(tee)
+	control, err := extractControlFromIpk(tee)
 	if err != nil {
-		return nil, fmt.Errorf("error: extract pkg-info from %q: %v", full_name, err)
+		return nil, fmt.Errorf("error: extract pkg-info from %q: %v", fullName, err)
 	}
 
-	ipkg := &Ipkg{Name: name, Control: control, Header: make(map[string]string)}
+	archive := &ipkArchive{Name: name, Control: control, Header: make(map[string]string)}
 
-	if err := ipkg.ControlToHeader(control); err != nil {
-		return nil, fmt.Errorf("error: header parse error in %q: %v", full_name, err)
+	if err := archive.ControlToHeader(control); err != nil {
+		return nil, fmt.Errorf("error: header parse error in %q: %v", fullName, err)
 	}
 
 	// consume the rest of the file to calculate md5/sha1
 	io.Copy(ioutil.Discard, tee)
 	file.Close() // close to free handles, 'collector' might block freeing otherwise
 
-	ipkg.FileInfo, _ = os.Lstat(full_name)
+	archive.FileInfo, _ = os.Lstat(fullName)
 	if md5er != nil {
-		ipkg.Md5 = hex.EncodeToString(md5er.Sum(nil))
+		archive.Md5 = hex.EncodeToString(md5er.Sum(nil))
 	}
 	if sha1er != nil {
-		ipkg.Sha1 = hex.EncodeToString(sha1er.Sum(nil))
+		archive.Sha1 = hex.EncodeToString(sha1er.Sum(nil))
 	}
 
-	return ipkg, nil
+	return archive, nil
 }

@@ -12,13 +12,13 @@ import (
 
 // returns a "normalized" variant of the pkix.Name
 // which might be used as a file on disk
-func clientIdByName(name *pkix.Name) string {
+func clientIDByName(name *pkix.Name) string {
 
 	nameBytes := typeValsToBytes(name.Names, true)
 	return string(nameBytes)
 }
 
-func printClientIdTo(w io.Writer, certFile string) error {
+func printClientIDTo(w io.Writer, certFile string) error {
 	var (
 		cert          *x509.Certificate
 		block         *pem.Block
@@ -49,8 +49,8 @@ func printClientIdTo(w io.Writer, certFile string) error {
 		return fmt.Errorf("cert file %q does not contain a certificate", certFile)
 	}
 
-	clientId := clientIdByName(&cert.Subject)
-	fmt.Fprintf(w, "%s\n", clientId)
+	clientID := clientIDByName(&cert.Subject)
+	fmt.Fprintf(w, "%s\n", clientID)
 
 	return nil
 }

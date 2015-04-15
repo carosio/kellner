@@ -61,7 +61,7 @@ func initTLS(listener net.Listener, opts *tlsOptions) (net.Listener, error) {
 
 		tlsConfig.ClientCAs = x509.NewCertPool()
 		if ok := tlsConfig.ClientCAs.AppendCertsFromPEM(certBytes); !ok {
-			return listener, fmt.Errorf("adding ca-certs from %q to the pool failed.", opts.clientCasFileName)
+			return listener, fmt.Errorf("adding ca-certs from %q to the pool failed", opts.clientCasFileName)
 		}
 
 		log.Printf("added %d certs from %q to ca-certs", len(tlsConfig.ClientCAs.Subjects()), opts.clientCasFileName)
