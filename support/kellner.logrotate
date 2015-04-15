@@ -1,11 +1,12 @@
-/var/log/kellner.log {
+/var/log/kellner*.log{
     su root root
     daily
     missingok
     rotate 30
     compress
+    delaycompress
     notifempty
     sharedscripts
     postrotate
-        pkill -f kellner -SIGUSR1
+        /usr/bin/pkill -f kellner -SIGUSR1 &> /var/log/kellner.log
     endscript
