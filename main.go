@@ -48,12 +48,12 @@ func main() {
 		showVersion     = flag.Bool("version", false, "show version and exit")
 		logFileName     = flag.String("log", "", "log to given filename")
 
-		sslKey               = flag.String("ssl-key", "", "PEM encoded ssl-key")
-		sslCert              = flag.String("ssl-cert", "", "PEM encoded ssl-cert")
-		sslClientCas         = flag.String("ssl-client-cas", "", "PEM encoded list of ssl-certs containing the CAs")
-		sslRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
-		sslClientIDMuxRoot   = flag.String("client-map", "", "directory containing the client-mappings")
-		printClientCert      = flag.String("client-id-for", "", "print client-id for given .cert and exit")
+		tlsKey               = flag.String("tls-key", "", "PEM encoded ssl-key")
+		tlsCert              = flag.String("tls-cert", "", "PEM encoded ssl-cert")
+		tlsClientCas         = flag.String("tls-client-ca-file", "", "file with PEM encoded list of ssl-certs containing the CAs")
+		tlsRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
+		tlsClientIDMuxRoot   = flag.String("idmap", "", "directory containing the client-mappings")
+		printClientCert      = flag.String("print-client-cert-id", "", "print client-id for given .cert and exit")
 
 		listen net.Listener
 		err    error
@@ -141,13 +141,13 @@ func main() {
 	}
 	listen = l
 
-	if *sslCert != "" || *sslKey != "" {
+	if *tlsCert != "" || *tlsKey != "" {
 
 		var tlsOpts = tlsOptions{
-			keyFileName:       *sslKey,
-			certFileName:      *sslCert,
-			requireClientCert: *sslRequireClientCert,
-			clientCasFileName: *sslClientCas,
+			keyFileName:       *tlsKey,
+			certFileName:      *tlsCert,
+			requireClientCert: *tlsRequireClientCert,
+			clientCasFileName: *tlsClientCas,
 		}
 
 		if listen, err = initTLS(listen, &tlsOpts); err != nil {
@@ -215,9 +215,9 @@ func main() {
 	log.Printf("processed %d package-folders in %s", len(indices), time.Since(startTime))
 
 	var httpHandler http.Handler = rootMuxer
-	if *sslClientIDMuxRoot != "" {
+	if *tlsClientIDMuxRoot != "" {
 		httpHandler = &clientIDMuxer{
-			Folder: *sslClientIDMuxRoot,
+			Folder: *tlsClientIDMuxRoot,
 			Muxer:  rootMuxer,
 		}
 	}
@@ -226,7 +226,7 @@ func main() {
 
 	log.Println()
 	proto := "http://"
-	if *sslKey != "" {
+	if *tlsKey != "" {
 		proto = "https://"
 	}
 	log.Printf("serving at %s", proto+listen.Addr().String())
