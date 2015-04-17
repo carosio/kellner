@@ -64,44 +64,10 @@ func (muxer *clientIDMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var (
-		requestedPath = path.Clean(r.URL.Path)
-		mapFile       string
-		fi            os.FileInfo
-		err           error
-	)
+	fs := fsFileProbe{}
+	mapFile, mappedPath, fi, err := findMappingFile(r.URL.Path, muxer.Folder, clientID, ",", &fs)
 
-	// try to cut away components from the clientID and
-	// and find a mapping file
-	for clientID != "" {
-
-		pos := strings.LastIndexAny(clientID, ",")
-		if pos <= 0 {
-			break
-		}
-
-		clientDir := filepath.Join(muxer.Folder, clientID)
-
-		// first try  /cdir/request/file.ipk
-		// than       /cdir/request
-		//
-		// both should find the mapping file /cdir/request
-		// TODO:      /cidr/request/subfolder/file.ipk
-		mapFile = filepath.Join(clientDir, requestedPath)
-		if fi, err = os.Lstat(mapFile); err != nil {
-			requestedPath = path.Dir(requestedPath)
-			mapFile = filepath.Join(clientDir, requestedPath)
-			fi, err = os.Lstat(mapFile)
-		}
-
-		if fi != nil {
-			break
-		}
-
-		clientID = clientID[:pos]
-	}
-
-	if fi == nil {
+	if fi == nil || err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -112,8 +78,6 @@ func (muxer *clientIDMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-
-	mappedPath := requestedPath
 
 	// if the file is not empty, the content defines the mapping
 	if fi.Size() > 0 {
@@ -138,6 +102,44 @@ func (muxer *clientIDMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			clientID, r.URL.Path, mappedRequest.URL.Path, matchingPattern))
 
 	handler.ServeHTTP(w, &mappedRequest)
+}
+
+func findMappingFile(name, folder, id, sep string, fs fileProbe) (mapFile string, needle string, fi os.FileInfo, err error) {
+
+	var (
+		needleFile = path.Clean(name)
+		needleDir  = path.Dir(needleFile)
+	)
+
+	for id != "" {
+
+		base := filepath.Join(folder, id)
+		needle = needleFile
+
+		// first try  /cdir/request/file.ipk
+		// then       /cdir/request
+		//
+		// both should find the mapping file /cdir/request
+		// TODO:      /cidr/request/subfolder/file.ipk
+		mapFile = filepath.Join(base, needle)
+		if fi, err = fs.Stat(mapFile); err != nil {
+			needle = needleDir
+			mapFile = filepath.Join(base, needle)
+			fi, err = fs.Stat(mapFile)
+		}
+
+		if fi != nil && !fi.IsDir() {
+			break
+		}
+
+		pos := strings.LastIndexAny(id, sep)
+		if pos <= 0 {
+			break
+		}
+		id = id[:pos]
+	}
+
+	return mapFile, needle, fi, err
 }
 
 func writeError(code int, w http.ResponseWriter, r *http.Request) {
