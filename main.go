@@ -33,7 +33,7 @@ import (
 	"time"
 )
 
-const versionString = "kellner-0.3"
+const versionString = "kellner-0.3.1"
 
 func main() {
 
@@ -80,7 +80,7 @@ func main() {
 	}
 
 	if *rootName == "" {
-		fmt.Fprintf(os.Stderr, "usage error: missing / empty -root")
+		fmt.Fprintf(os.Stderr, "usage error: missing / empty -root\n")
 		os.Exit(1)
 	}
 	*rootName, _ = filepath.Abs(*rootName)
