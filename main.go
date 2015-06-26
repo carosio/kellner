@@ -20,33 +20,30 @@ package main
 import (
 	"flag"
 	"fmt"
-	"io"
 	"log"
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
-	"path"
 	"path/filepath"
-	"sync"
-	"syscall"
-	"time"
 )
 
-const versionString = "kellner-0.3.1"
+const versionString = "kellner-0.5.0"
 
 func main() {
 
 	var (
-		nworkers        = flag.Int("workers", 4, "number of workers")
-		bind            = flag.String("bind", ":8080", "address to bind to")
-		rootName        = flag.String("root", "", "directory containing the packages")
 		dumpPackageList = flag.Bool("dump", false, "just dump the package list and exit")
-		addMd5          = flag.Bool("md5", true, "calculate md5 of scanned packages")
-		addSha1         = flag.Bool("sha1", false, "calculate sha1 of scanned packages")
-		useGzip         = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
-		showVersion     = flag.Bool("version", false, "show version and exit")
-		logFileName     = flag.String("log", "", "log to given filename")
+		prepareCache    = flag.Bool("prep-cache", false, "scan all packages and prepare the cache folder, do not serve anything")
+
+		bind        = flag.String("bind", ":8080", "address to bind to")
+		rootName    = flag.String("root", "", "directory containing the packages")
+		cacheName   = flag.String("cache", "cache", "directory containing cached meta-files (eg. control)")
+		nworkers    = flag.Int("workers", 4, "number of workers")
+		addMd5      = flag.Bool("md5", true, "calculate md5 of scanned packages")
+		addSha1     = flag.Bool("sha1", false, "calculate sha1 of scanned packages")
+		useGzip     = flag.Bool("gzip", true, "use 'gzip' to compress the package index. if false: use golang")
+		showVersion = flag.Bool("version", false, "show version and exit")
+		logFileName = flag.String("log", "", "log to given filename")
 
 		tlsKey               = flag.String("tls-key", "", "PEM encoded ssl-key")
 		tlsCert              = flag.String("tls-cert", "", "PEM encoded ssl-cert")
@@ -85,48 +82,33 @@ func main() {
 	}
 	*rootName, _ = filepath.Abs(*rootName)
 
-	var logger io.Writer = os.Stderr
-	var logFile *os.File
-	if *logFileName != "" {
-		logFile, err = os.OpenFile(*logFileName, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "can't create -log %q: %v", *logFileName, err)
-			os.Exit(1)
-		}
-		logger = io.MultiWriter(os.Stderr, logFile)
-	}
-	log.SetOutput(logger)
-
-	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGUSR1) // NOTE: USR1 does not exist on windows
-		for sig := range sigChan {
-			switch sig {
-			case syscall.SIGUSR1:
-
-				log.Printf("received USR1, recreating log file")
-
-				logFile, logger = rotateLog(logFile, logger)
-				log.SetOutput(logger)
-			}
-		}
-	}()
+	setupLogging(*logFileName)
 
 	// simple use-case: scan one directory and dump the created
 	// packages-list to stdout.
 	if *dumpPackageList {
-		now := time.Now()
-		log.Println("start building index from", *rootName)
+		dumpPackages(*rootName, *nworkers, *addMd5, *addSha1)
+		return
+	}
 
-		packages, err := scanDirectoryForPackages(*rootName, *nworkers, *addMd5, *addSha1)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error: %v\n", err)
-			os.Exit(2)
-		}
-		log.Println("done building index")
-		log.Printf("time to parse %d packages: %s\n", len(packages.Entries), time.Since(now))
+	if *cacheName == "" {
+		fmt.Fprintf(os.Stderr, "usage error: missing / empty -cache\n")
+		os.Exit(1)
+	}
 
-		os.Stdout.WriteString(packages.String())
+	if err = os.MkdirAll(*cacheName, 0755); err != nil {
+		fmt.Fprintf(os.Stderr, "error creating %q: %v\n", *cacheName, err)
+		os.Exit(1)
+	}
+
+	gzipper := gzWrite(gzGzipPipe)
+	if !*useGzip {
+		gzipper = gzGolang
+	}
+
+	scanRoot(*rootName, *cacheName, *nworkers, *addMd5, *addSha1, gzipper)
+
+	if *prepareCache {
 		return
 	}
 
@@ -157,62 +139,13 @@ func main() {
 		}
 	}
 
+
 	log.Println("listen on", listen.Addr())
 
-	gzwrite := gzWrite(gzGzipPipe)
-	if !*useGzip {
-		gzwrite = gzGolang
-	}
-
 	// the root-muxer is used either directly (non-ssl-client-cert case) or
-	// as a lookup-pool for ClientIdMuxer to get the real worker
-	rootMuxer := http.NewServeMux()
-
-	startTime := time.Now()
-	var indices = make([]string, 0)
-	filepath.Walk(*rootName, func(path string, fi os.FileInfo, err error) error {
-
-		if !fi.IsDir() {
-			return nil
-		}
-
-		var (
-			packages *packageIndex
-			now      = time.Now()
-		)
-
-		log.Printf("start building index for %q", path)
-
-		if packages, err = scanDirectoryForPackages(path, *nworkers, *addMd5, *addSha1); err != nil {
-			log.Printf("error: %v", err)
-			return nil
-		}
-
-		log.Printf("done building index for %q", path)
-		log.Printf("time to parse %d packages in %q: %s\n", len(packages.Entries), path, time.Since(now))
-
-		muxPath := path[len(*rootName):]
-		if muxPath == "" {
-			muxPath = "/"
-		}
-
-		// non-package directories
-		if len(packages.Entries) == 0 {
-			rootMuxer.Handle(muxPath, http.FileServer(http.Dir(path)))
-			return nil
-		}
-
-		attachHTTPHandler(rootMuxer, packages, muxPath, *rootName, gzwrite)
-
-		indices = append(indices, muxPath)
-
-		return nil
-	})
-	// TODO: this is specific to non-client-id situations
-	attachOpkgRepoSnippet(rootMuxer, "/opkg.conf", indices)
-
-	log.Println()
-	log.Printf("processed %d package-folders in %s", len(indices), time.Since(startTime))
+	// as a lookup-pool for ClientIdMuxer to get the real handler
+	var rootMuxer = http.NewServeMux()
+	rootMuxer.Handle("/", makeIndexHandler(*rootName, *cacheName))
 
 	var httpHandler http.Handler = rootMuxer
 	if *tlsClientIDMuxRoot != "" {
@@ -231,61 +164,4 @@ func main() {
 	}
 	log.Printf("serving at %s", proto+listen.Addr().String())
 	http.Serve(listen, httpHandler)
-}
-
-func scanDirectoryForPackages(dir string, nworkers int, addMd5, addSha1 bool) (*packageIndex, error) {
-
-	root, err := os.Open(dir)
-	if err != nil {
-		return nil, fmt.Errorf("opening -root %q: %v\n", dir, err)
-	}
-
-	entries, err := root.Readdirnames(-1)
-	if err != nil {
-		return nil, fmt.Errorf("reading dir entries from -root %q: %v\n", dir, err)
-	}
-
-	packages := &packageIndex{Entries: make(map[string]*ipkArchive)}
-	workers := newWorkerPool(nworkers)
-
-	for _, entry := range entries {
-		if path.Ext(entry) != ".ipk" {
-			continue
-		}
-		workers.Hire()
-		go func(name string) {
-			defer workers.Release()
-			archive, err := newIpkFromFile(name, dir, addMd5, addSha1)
-			if err != nil {
-				log.Printf("error: %v\n", err)
-				return
-			}
-			packages.Lock()
-			packages.Entries[name] = archive
-			packages.Unlock()
-		}(entry)
-	}
-	workers.Wait()
-	return packages, nil
-}
-
-type workerPool struct {
-	sync.WaitGroup
-	worker chan bool
-}
-
-func newWorkerPool(n int) *workerPool {
-	return &workerPool{worker: make(chan bool, n)}
-}
-
-// hire / block a worker from the pool
-func (pool *workerPool) Hire() {
-	pool.worker <- true
-	pool.Add(1)
-}
-
-// release / unblock a blocked worker from the pool
-func (pool *workerPool) Release() {
-	pool.Done()
-	<-pool.worker
 }

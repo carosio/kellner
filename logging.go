@@ -9,10 +9,48 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/signal"
+	"syscall"
 )
+
+func setupLogging(logFileName string) {
+
+	var (
+		logger  io.Writer = os.Stderr
+		logFile *os.File
+		err     error
+	)
+
+	if logFileName != "" {
+		logFile, err = os.OpenFile(logFileName, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "can't create -log %q: %v", logFileName, err)
+			os.Exit(1)
+		}
+		logger = io.MultiWriter(os.Stderr, logFile)
+	}
+	log.SetOutput(logger)
+
+	// on SIGUSR1 we rotate the log, see rotateLog()
+	go func() {
+		sigChan := make(chan os.Signal, 1)
+		signal.Notify(sigChan, syscall.SIGUSR1) // NOTE: USR1 does not exist on windows
+		for sig := range sigChan {
+			switch sig {
+			case syscall.SIGUSR1:
+
+				log.Printf("received USR1, recreating log file")
+
+				logFile, logger = rotateLog(logFile, logger)
+				log.SetOutput(logger)
+			}
+		}
+	}()
+}
 
 // assumption: user or logrotate has moved / renamed the file: we
 // still have the handle to the file but the name is gone. so,

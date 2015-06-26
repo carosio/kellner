@@ -23,10 +23,8 @@ import (
 	"net/textproto"
 	"os"
 	"path"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
 
 	"github.com/blakesmith/ar"
 )
@@ -120,49 +118,6 @@ func (ipk *ipkArchive) ControlAndChecksumTo(w io.Writer) {
 }
 
 type ipkArchiveChan chan *ipkArchive
-
-type packageIndex struct {
-	sync.Mutex
-	Entries map[string]*ipkArchive
-}
-
-// StringTo writes all control data and checksums
-// to write 'w'. Essentially it creates a
-// a 'Packages' file
-func (pi *packageIndex) StringTo(w io.Writer) {
-	for _, name := range pi.SortedNames() {
-		entry := pi.Entries[name]
-		entry.ControlAndChecksumTo(w)
-		fmt.Fprintln(w)
-	}
-}
-
-// StampsTo writes all timestamps to write 'w'
-func (pi *packageIndex) StampsTo(w io.Writer) {
-	for _, name := range pi.SortedNames() {
-		entry := pi.Entries[name]
-		fmt.Fprintf(w, "%d %s\n", entry.FileInfo.ModTime().Unix(), name)
-	}
-}
-
-func (pi *packageIndex) String() string {
-	buf := bytes.NewBuffer(nil)
-	pi.StringTo(buf)
-	return buf.String()
-}
-
-func (pi *packageIndex) SortedNames() []string {
-	var (
-		names = make([]string, len(pi.Entries))
-		i     int
-	)
-	for name := range pi.Entries {
-		names[i] = name
-		i++
-	}
-	sort.Strings(names)
-	return names
-}
 
 // extract 'control' file from 'reader'. the contents of a 'control' file
 // is a set of key-value pairs as described in
@@ -270,6 +225,28 @@ func newIpkFromFile(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error) 
 	if sha1er != nil {
 		archive.Sha1 = hex.EncodeToString(sha1er.Sum(nil))
 	}
+
+	return archive, nil
+}
+
+func newIpkFromCache(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error) {
+
+	var (
+		fullName = genCachedControlName(name, root)
+		control  []byte
+		err      error
+	)
+
+	if control, err = ioutil.ReadFile(fullName); err != nil {
+		return nil, fmt.Errorf("error: reading cache %q: %v\n", fullName, err)
+	}
+
+	var archive = &ipkArchive{Name: name,
+		Control: string(control),
+		Header:  make(map[string]string),
+	}
+	archive.FileInfo, _ = os.Stat(fullName)
+	archive.ControlToHeader(archive.Control)
 
 	return archive, nil
 }
