@@ -139,6 +139,7 @@ func main() {
 		}
 	}
 
+	go rescan(*rootName, *cacheName, *nworkers, *addMd5, *addSha1, gzipper)
 
 	log.Println("listen on", listen.Addr())
 
