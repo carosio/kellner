@@ -50,6 +50,10 @@ func scanRoot(root, cache string, nworkers int, doMD5, doSHA1 bool, gzipper gzWr
 		log.Printf("time to parse %d packages in %q: %s\n",
 			scanner.packages.Len(), path, time.Since(now))
 
+		if scanner.packages.Len() == 0 {
+			return nil
+		}
+
 		//
 		// write the package index
 		//
