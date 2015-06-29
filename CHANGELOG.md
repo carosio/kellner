@@ -1,5 +1,10 @@
 == CHANGES for *kellner*
 
+=== 2015-06-29 Release-0.5.1
+
+* Feature: -cache
+* Feature: rescan on SIGUSR2
+
 === 2015-04-17 Release-0.3.1
 
 * Bugfix idmap lookup

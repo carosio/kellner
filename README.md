@@ -9,12 +9,14 @@ package managers.
     $> keller -root dir_full_of_packages/
 
     -bind=":8080": address to bind to
+    -cache="cache": directory containing cached meta-files (eg. control)
     -dump=false: just dump the package list and exit
     -gzip=true: use 'gzip' to compress the package index. if false: use golang
     -idmap="": directory containing the client-mappings
     -log="": log to given filename
     -md5=true: calculate md5 of scanned packages
     -print-client-cert-id="": print client-id for given .cert and exit
+    -prep-cache=false: scan all packages and prepare the cache folder, do not serve anything
     -require-client-cert=false: require a client-cert
     -root="": directory containing the packages
     -sha1=false: calculate sha1 of scanned packages
@@ -120,6 +122,11 @@ Right now *kellner*:
 
 - supports only .ipk packages
 
+
+### Authors
+
+* Mathias Gumz - Maintainer
+* Helge Sychla - Contributor
 
 ### Name
 
