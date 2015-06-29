@@ -38,7 +38,7 @@ func makeIndexHandler(root, cache string) http.Handler {
 		}
 
 		if fi.IsDir() {
-			renderIndex(w, r, path, root, cache)
+			renderIndex(w, r, root, cache)
 			return
 		}
 

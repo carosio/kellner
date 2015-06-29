@@ -9,11 +9,12 @@
 package main
 
 import (
-	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"sort"
 	"text/template"
 	"time"
 )
@@ -44,10 +45,10 @@ This repository contains {{.Entries|len}} packages with an accumulated size of {
 	<tbody>
 {{range .Entries}}
 	<tr>
-		<td class="col-link"><a href="{{.Name}}">{{.Name}}</a></td>
+		<td class="col-link"><a href="{{.Href}}">{{.Name}}</a></td>
 		<td class="col-modtime">{{.ModTime.Format "2006-01-02T15:04:05Z07:00" }}</td>
 		<td class="col-size">{{.Size}}</td>
-		<td class="col-descr"><a href="{{.Name}}.control" title="{{.RawDescr | html }}">{{.Descr}}</td>
+		<td class="col-descr"><a href="{{.Href}}.control" title="{{.RawDescr | html }}">{{.Descr}}</td>
 	</tr>
 {{end}}
 	</tbody>
@@ -60,11 +61,18 @@ var indexTemplate = template.Must(template.New("index").Parse(_Template))
 
 type dirEntry struct {
 	Name     string
+	Href     string
 	ModTime  time.Time
 	Size     int64
 	RawDescr string
 	Descr    string
 }
+
+type dirEntryByName []dirEntry
+
+func (a dirEntryByName) Len() int           { return len(a) }
+func (a dirEntryByName) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a dirEntryByName) Less(i, j int) bool { return a[i].Name < a[j].Name }
 
 type renderCtx struct {
 	Title       string
@@ -74,48 +82,63 @@ type renderCtx struct {
 	Version     string
 }
 
-func renderIndex(w http.ResponseWriter, r *http.Request, path, root, cache string) {
+func renderIndex(w http.ResponseWriter, r *http.Request, root, cache string) {
 
+	var reqPath = filepath.Join(root, r.URL.Path)
 	var ctx = renderCtx{
-		Title:   path + " - kellner",
+		Title:   r.URL.Path + " - kellner",
 		Version: versionString,
 		Date:    time.Now()}
 
-	var rootDir, err = os.Open(root)
+	var dir, err = os.Open(reqPath)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	defer rootDir.Close()
+	defer dir.Close()
 	var entry os.FileInfo
 	var entries []os.FileInfo
 
-	entries, err = rootDir.Readdir(-1)
+	entries, err = dir.Readdir(-1)
 
-	if entry, err = os.Stat(filepath.Join(cache, "Packages")); err == nil {
+	if entry, err = os.Stat(filepath.Join(cache, r.URL.Path, "Packages")); err == nil {
 		entries = append(entries, entry)
 	}
-	if entry, err = os.Stat(filepath.Join(cache, "Packages.gz")); err == nil {
+	if entry, err = os.Stat(filepath.Join(cache, r.URL.Path, "Packages.gz")); err == nil {
 		entries = append(entries, entry)
 	}
-	if entry, err = os.Stat(filepath.Join(cache, "Packages.stamps")); err == nil {
+	if entry, err = os.Stat(filepath.Join(cache, r.URL.Path, "Packages.stamps")); err == nil {
 		entries = append(entries, entry)
 	}
 
-	ctx.Entries = make([]dirEntry, len(entries))
+	ctx.Entries = make([]dirEntry, len(entries)+1)
 
 	var i int
 	for i, entry = range entries {
 		ctx.Entries[i] = dirEntry{
 			Name:    entry.Name(),
-			ModTime: ctx.Date,
+			Href:    path.Join(r.URL.Path, entry.Name()),
+			ModTime: entry.ModTime(),
 			Size:    int64(entry.Size()),
 		}
+		/* TODO: re-enable
 		var raw, _ = ioutil.ReadFile(filepath.Join(cache, entry.Name()))
 		ctx.Entries[i].RawDescr = string(raw)
+		*/
 
 		ctx.SumFileSize += entry.Size()
 	}
+
+	if reqPath == root {
+		ctx.Entries = ctx.Entries[:len(ctx.Entries)-1]
+	} else {
+		ctx.Entries[len(ctx.Entries)-1] = dirEntry{
+			Name:    "..",
+			Href:    path.Join(r.URL.Path, ".."),
+			ModTime: ctx.Date,
+		}
+	}
+	sort.Sort(dirEntryByName(ctx.Entries))
 
 	if err = indexTemplate.Execute(w, ctx); err != nil {
 		log.Println("error: rendering %q: %v", r.URL.Path, err)
