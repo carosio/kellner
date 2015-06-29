@@ -25,7 +25,7 @@ func makeIndexHandler(root, cache string) http.Handler {
 
 		switch baseName {
 		case "Packages", "Packages.gz", "Packages.stamps":
-			var cachedPath = filepath.Join(cache, baseName)
+			var cachedPath = filepath.Join(cache, r.URL.Path)
 			http.ServeFile(w, r, cachedPath)
 			return
 		}
