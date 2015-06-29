@@ -62,7 +62,7 @@ func scanRoot(root, cache string, nworkers int, doMD5, doSHA1 bool, gzipper gzWr
 		var indexNameGz = indexName + ".gz"
 		var indexNameStamps = indexName + ".stamps"
 
-		var packagesFile, packagesFileGz, packagesStamps *os.File
+		var packagesFile, packagesFileGz, packagesFileStamps *os.File
 		if packagesFile, err = ioutil.TempFile(cachePath, "Packages"); err != nil {
 			log.Printf("error: can't create the Packages file in %q: %v\n", cachePath, err)
 			return nil
@@ -74,23 +74,27 @@ func scanRoot(root, cache string, nworkers int, doMD5, doSHA1 bool, gzipper gzWr
 		}
 		defer packagesFileGz.Close()
 
-		if packagesStamps, err = os.Create(indexNameStamps); err != nil {
+		if packagesFileStamps, err = os.Create(packagesFile.Name() + ".stamps"); err != nil {
 			log.Printf("error: can't create the Packages.stamps file in %q: %v\n", cachePath, err)
 			return nil
 		}
+		defer packagesFileStamps.Close()
 
 		var index = scanner.packages.String()
 
 		io.Copy(packagesFile, strings.NewReader(index))
+		packagesFile.Sync()
 		gzipper(packagesFileGz, strings.NewReader(index))
-		scanner.packages.StampsTo(packagesStamps)
+		packagesFileGz.Sync()
+		scanner.packages.StampsTo(packagesFileStamps)
+		packagesFileStamps.Sync()
 
 		os.Remove(indexName)
 		os.Remove(indexNameGz)
 		os.Remove(indexNameStamps)
 		os.Rename(packagesFile.Name(), indexName)
 		os.Rename(packagesFileGz.Name(), indexNameGz)
-		os.Rename(packagesStamps.Name(), indexNameStamps)
+		os.Rename(packagesFileStamps.Name(), indexNameStamps)
 
 		return nil
 	})
