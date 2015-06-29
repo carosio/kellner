@@ -98,7 +98,7 @@ func (muxer *clientIDMuxer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	handler, matchingPattern := muxer.Muxer.Handler(&mappedRequest)
 
 	r.Header.Add(_ExtraLogKey,
-		fmt.Sprintf("mappedRequest %q: %s => %s (based on matching handler for %q",
+		fmt.Sprintf("mappedRequest %q: %s => %s (based on matching handler for %q)",
 			clientID, r.URL.Path, mappedRequest.URL.Path, matchingPattern))
 
 	handler.ServeHTTP(w, &mappedRequest)
