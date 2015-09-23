@@ -1,5 +1,9 @@
 == CHANGES for *kellner*
 
+=== 2015-09-23 Release-0.5.2
+
+* deliver empty Packages-Index for empty directories
+
 === 2015-06-29 Release-0.5.1
 
 * Feature: -cache
