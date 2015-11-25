@@ -29,6 +29,11 @@ func scanRoot(root, cache string, nworkers int, doMD5, doSHA1 bool, gzipper gzWr
 			return nil
 		}
 
+		// skip cache-directory
+		if strings.HasPrefix(path, cache) {
+			return filepath.SkipDir
+		}
+
 		var (
 			now          = time.Now()
 			relPath, _   = filepath.Rel(root, path)

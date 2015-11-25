@@ -95,6 +95,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -cache\n")
 		os.Exit(1)
 	}
+	*cacheName, _ = filepath.Abs(*cacheName)
 
 	if err = os.MkdirAll(*cacheName, 0755); err != nil {
 		fmt.Fprintf(os.Stderr, "error creating %q: %v\n", *cacheName, err)
