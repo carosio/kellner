@@ -25,7 +25,14 @@ func scanRoot(root, cache string, nworkers int, doMD5, doSHA1 bool, gzipper gzWr
 
 	filepath.Walk(root, func(path string, fi os.FileInfo, err error) error {
 
-		if !fi.IsDir() {
+		if fi == nil || !fi.IsDir() {
+
+			// not existing root-directory. we don't crash or exit here, the
+			// operator might create it later on and trigger a rescan.
+			if fi == nil && root == path {
+				log.Printf("warning: not existent root directory %q\n", root)
+			}
+
 			return nil
 		}
 
