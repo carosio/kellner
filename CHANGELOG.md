@@ -1,13 +1,21 @@
 == CHANGES for *kellner*
 
+=== 2015-12-16 Release-0.5.3
+
+* Fix: scanning not existent -root directory
+* Fix: prevent scanning the -cache directory
+
+
 === 2015-09-23 Release-0.5.2
 
 * deliver empty Packages-Index for empty directories
+
 
 === 2015-06-29 Release-0.5.1
 
 * Feature: -cache
 * Feature: rescan on SIGUSR2
+
 
 === 2015-04-17 Release-0.3.1
 
