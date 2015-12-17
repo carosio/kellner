@@ -1,12 +1,12 @@
-## kellner - fast adhoc serving of packages
+## kellner - fast ad hoc serving of packages
 
 *kellner* scans a given directory for software packages and creates an index.
-It then acts as an adhoc httpd which serves the packages to *opkg* or other
+It then acts as an ad hoc httpd which serves the packages to *opkg* or other
 package managers.
 
 ### Usage
 
-    $> keller -root dir_full_of_packages/
+    $> kellner -root dir_full_of_packages/
 
     -bind=":8080": address to bind to
     -cache="cache": directory containing cached meta-files (eg. control)
@@ -50,7 +50,7 @@ certificate contains a "Subject":
     $> openssl x509 -noout -subject < client.crt
     subject= O=SolSys/OU=Earth/CN=sample
 
-*kellner* uses the subject of the client certificate to lookup which packages
+*kellner* uses the subject of the client certificate to look up which packages
 should be served to that specific client:
 
     $> kellner -idmap identities -root packages -require-client-cert \
