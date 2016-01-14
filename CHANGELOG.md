@@ -1,5 +1,10 @@
 == CHANGES for *kellner*
 
+=== 2016-01-14 Release-0.5.4
+
+* Improve error handling of malformed .ipk meta data
+
+
 === 2015-12-16 Release-0.5.3
 
 * Fix: scanning not existent -root directory

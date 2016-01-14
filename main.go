@@ -27,7 +27,7 @@ import (
 	"path/filepath"
 )
 
-const versionString = "kellner-0.5.3"
+const versionString = "kellner-0.5.4"
 
 func main() {
 
