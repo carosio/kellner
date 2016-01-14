@@ -142,12 +142,15 @@ func extractControlFromIpk(reader io.Reader) (string, error) {
 		// NOTE: strangeley the name of the files end with a "/" ... content error?
 		if header.Name == "control.tar.gz/" || header.Name == "control.tar.gz" {
 			gzReader, err = gzip.NewReader(arReader)
+			if err != nil {
+				return "", fmt.Errorf("analyzing control.tar.gz: %v", err)
+			}
 			break
 		}
 	}
 
 	if gzReader == nil {
-		return "", fmt.Errorf("missing control.tar.gz file")
+		return "", fmt.Errorf("missing control.tar.gz entry")
 	}
 	defer gzReader.Close()
 
@@ -205,13 +208,13 @@ func newIpkFromFile(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error) 
 
 	control, err := extractControlFromIpk(tee)
 	if err != nil {
-		return nil, fmt.Errorf("error: extract pkg-info from %q: %v", fullName, err)
+		return nil, fmt.Errorf("extract pkg-info from %q: %v", fullName, err)
 	}
 
 	archive := &ipkArchive{Name: name, Control: control, Header: make(map[string]string)}
 
 	if err := archive.ControlToHeader(control); err != nil {
-		return nil, fmt.Errorf("error: header parse error in %q: %v", fullName, err)
+		return nil, fmt.Errorf("header parse error in %q: %v", fullName, err)
 	}
 
 	// consume the rest of the file to calculate md5/sha1
@@ -238,7 +241,7 @@ func newIpkFromCache(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error)
 	)
 
 	if control, err = ioutil.ReadFile(fullName); err != nil {
-		return nil, fmt.Errorf("error: reading cache %q: %v\n", fullName, err)
+		return nil, fmt.Errorf("reading cache %q: %v\n", fullName, err)
 	}
 
 	var archive = &ipkArchive{Name: name,
