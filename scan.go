@@ -112,7 +112,6 @@ type packageScanner struct {
 	nScanned int64
 	nCached  int64
 
-	root   string
 	cache  string
 	doSHA1 bool
 	doMD5  bool
@@ -165,7 +164,7 @@ func (s *packageScanner) scan(dirPath string, nworkers int) error {
 	worker.Wait()
 
 	log.Printf("scanned %d packages (fresh %d|%d from cache) in %q.",
-		s.packages.Len(), s.nScanned, s.nCached, s.root)
+		s.packages.Len(), s.nScanned, s.nCached, dirPath)
 
 	return nil
 }
