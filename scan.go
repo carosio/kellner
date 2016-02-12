@@ -122,9 +122,9 @@ func (s *packageScanner) clear() {
 	s.packages = &packageIndex{Entries: make(map[string]*ipkArchive)}
 }
 
-// scanPackages scans all files in root for packages. if it finds one, it
-// checks the cache folder, it a cached version of the meta-information exists
-// or if the meta-information is out-of-date. only if it's needed the meta
+// scanPackages scans all files in dirPath for packages. if it finds one, it
+// checks the cache folder, if a cached version of the meta-information exists
+// or if the meta-information is out-of-date. only when needed the meta
 // information will be extracted from the packages and stored in the
 // cache folder
 func (s *packageScanner) scan(dirPath string, nworkers int) error {
