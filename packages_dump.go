@@ -18,6 +18,14 @@ import (
 
 func dumpPackages(root string, nworkers int, doMD5, doSHA1 bool) {
 
+	var (
+		scanner = packageScanner{
+			doMD5:  doMD5,
+			doSHA1: doSHA1,
+		}
+		now = time.Now()
+	)
+
 	filepath.Walk(root, func(path string, fi os.FileInfo, walkerr error) error {
 		if fi == nil {
 			log.Printf("no such file or directory: %s\n", path)
@@ -27,26 +35,17 @@ func dumpPackages(root string, nworkers int, doMD5, doSHA1 bool) {
 			return nil
 		}
 
-		var (
-			scanner = packageScanner{
-				root:   path,
-				doMD5:  doMD5,
-				doSHA1: doSHA1,
-			}
-			now = time.Now()
-			err error
-		)
 		log.Println("start building index from", path)
 
-		if err = scanner.scan(nworkers); err != nil {
+		if err := scanner.scan(path, nworkers); err != nil {
 			fmt.Fprintf(os.Stderr, "error: %v\n", err)
 			os.Exit(2)
 		}
-		log.Printf("time to parse %d packages: %s\n",
-			scanner.packages.Len(), time.Since(now))
-		scanner.packages.StringTo(os.Stdout)
 		return nil
 	})
+	scanner.packages.StringTo(os.Stdout)
+	log.Printf("time to parse %d packages: %s\n",
+		scanner.packages.Len(), time.Since(now))
 	log.Println("done building index")
 
 	return

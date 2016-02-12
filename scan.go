@@ -46,14 +46,13 @@ func scanRoot(root, cache string, nworkers int, doMD5, doSHA1 bool, gzipper gzWr
 			relPath, _   = filepath.Rel(root, path)
 			cachePath, _ = filepath.Abs(filepath.Join(cache, relPath))
 			scanner      = packageScanner{
-				root:   path,
 				cache:  cachePath,
 				doMD5:  doMD5,
 				doSHA1: doSHA1,
 			}
 		)
 
-		if err = scanner.scan(nworkers); err != nil {
+		if err = scanner.scan(path, nworkers); err != nil {
 			log.Printf("error: %v", err)
 			return nil
 		}
@@ -119,16 +118,20 @@ type packageScanner struct {
 	doMD5  bool
 }
 
+func (s *packageScanner) clear() {
+	s.packages = &packageIndex{Entries: make(map[string]*ipkArchive)}
+}
+
 // scanPackages scans all files in root for packages. if it finds one, it
 // checks the cache folder, it a cached version of the meta-information exists
 // or if the meta-information is out-of-date. only if it's needed the meta
 // information will be extracted from the packages and stored in the
 // cache folder
-func (s *packageScanner) scan(nworkers int) error {
+func (s *packageScanner) scan(dirPath string, nworkers int) error {
 
-	var dir, err = os.Open(s.root)
+	var dir, err = os.Open(dirPath)
 	if err != nil {
-		return fmt.Errorf("opening -root %q: %v\n", s.root, err)
+		return fmt.Errorf("opening %q: %v\n", dirPath, err)
 	}
 	defer dir.Close()
 
@@ -138,10 +141,12 @@ func (s *packageScanner) scan(nworkers int) error {
 
 	var entries []os.FileInfo
 	if entries, err = dir.Readdir(-1); err != nil {
-		return fmt.Errorf("reading -root entries %q: %v\n", s.root, err)
+		return fmt.Errorf("reading entries %q: %v\n", dirPath, err)
 	}
 
-	s.packages = &packageIndex{Entries: make(map[string]*ipkArchive)}
+	if s.packages == nil {
+		s.clear()
+	}
 	var worker = newWorkerPool(nworkers)
 
 	for _, entry := range entries {
@@ -155,7 +160,7 @@ func (s *packageScanner) scan(nworkers int) error {
 		}
 
 		worker.Hire()
-		go s.scanAndCache(entry.Name(), worker)
+		go s.scanAndCache(path.Join(dirPath, entry.Name()), worker)
 	}
 	worker.Wait()
 
@@ -165,27 +170,27 @@ func (s *packageScanner) scan(nworkers int) error {
 	return nil
 }
 
-func (s *packageScanner) scanAndCache(name string, worker *workerPool) {
+func (s *packageScanner) scanAndCache(filePath string, worker *workerPool) {
 
 	var n = time.Now()
 	defer func() {
 		worker.Release()
-		log.Println("processed", name, time.Now().Sub(n))
+		log.Println("processed", filePath, time.Now().Sub(n))
 	}()
 
-	var archive, err = newIpkFromFile(name, s.root, s.doMD5, s.doSHA1)
+	var archive, err = newIpkFromFile(filePath, s.doMD5, s.doSHA1)
 	if err != nil {
 		log.Printf("error: %v\n", err)
 		return
 	}
-	s.packages.Add(name, archive)
+	s.packages.Add(filepath.Base(filePath), archive)
 	atomic.AddInt64(&s.nScanned, 1)
 
 	if s.cache == "" {
 		return
 	}
 
-	var cacheName = genCachedControlName(name, s.cache)
+	var cacheName = genCachedControlName(filepath.Base(filePath), s.cache)
 	if err = ioutil.WriteFile(cacheName, []byte(archive.Control), 0644); err != nil {
 		log.Println(cacheName, err)
 	}
