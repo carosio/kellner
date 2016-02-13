@@ -79,7 +79,7 @@ func condensePackages(roots []string, nworkers int, output string, archsubdirs b
 			// compare version
 			cmp := compareVersion(pkg.Header["Version"], prev.Header["Version"])
 			if cmp > 0 { // new finding wins
-				fmt.Printf("%s: %s (old: %s)\n", pkg.Header["Package"],
+				fmt.Printf("%s: %s replaced: %s\n", pkg.Header["Package"],
 					pkg.Header["Version"], prev.Header["Version"])
 				condensate.Add(cname, pkg)
 			}
@@ -87,11 +87,13 @@ func condensePackages(roots []string, nworkers int, output string, archsubdirs b
 			// first finding
 			condensate.Add(cname, pkg)
 		}
-
-		fmt.Printf("%s: (%s / %s)\n", pkgname, pkg.Header["Package"], pkg.Header["Version"])
 	}
+
+	// now let us create a zipfile with the condensated files
 	if output == "-" {
-		fmt.Printf("sorted names: {%s}\n", strings.Join(condensate.SortedNames(), "\n"))
+		// this is more a debugging thing,
+		// output filenames to stdout
+		fmt.Printf("sorted names:\n%s\n", strings.Join(condensate.SortedNames(), "\n"))
 	} else if strings.HasSuffix(output, ".zip") {
 		zipfile, err := os.Create(output)
 		if err != nil {
@@ -112,10 +114,12 @@ func condensePackages(roots []string, nworkers int, output string, archsubdirs b
 			if zwerr != nil {
 				return zwerr
 			}
+			// read scanned package from original location
 			sourcepkg, srcerr := os.Open(pkg.ScanLocation)
 			if srcerr != nil {
 				return srcerr
 			}
+			// and write bytes into the zip/bundle
 			_, cperr := io.Copy(writer, sourcepkg)
 			sourcepkg.Close()
 			if cperr != nil {
@@ -128,6 +132,8 @@ func condensePackages(roots []string, nworkers int, output string, archsubdirs b
 	return nil
 }
 
+// compare to versions,
+// return 0 when equal or 1/-1 when different
 func compareVersion(v1 string, v2 string) int {
 	v1ord := versionStringToOrdinals(v1)
 	v2ord := versionStringToOrdinals(v2)
@@ -151,6 +157,10 @@ func compareVersion(v1 string, v2 string) int {
 	return 0
 }
 
+// convert a string into an array of numbers parsed from
+// all occurances of consecutive digits
+// "foo123bar321" --> [123, 321]
+// "version-1.0.7-rc3.3" --> [1,0,7,3,3]
 func versionStringToOrdinals(version_string string) []int {
 	ord := ""
 	ordarray := []int{}
