@@ -32,8 +32,9 @@ const versionString = "kellner-0.5.4"
 func main() {
 
 	var (
-		dumpPackageList = flag.Bool("dump", false, "just dump the package list and exit")
-		prepareCache    = flag.Bool("prep-cache", false, "scan all packages and prepare the cache folder, do not serve anything")
+		dumpPackageList = flag.Bool("dump", false,
+			"just dump the package list and exit")
+		prepareCache = flag.Bool("prep-cache", false, "scan all packages and prepare the cache folder, do not serve anything")
 
 		bind        = flag.String("bind", ":8080", "address to bind to")
 		rootName    = flag.String("root", "", "directory containing the packages")
@@ -51,6 +52,10 @@ func main() {
 		tlsRequireClientCert = flag.Bool("require-client-cert", false, "require a client-cert")
 		tlsClientIDMuxRoot   = flag.String("idmap", "", "directory containing the client-mappings")
 		printClientCert      = flag.String("print-client-cert-id", "", "print client-id for given .cert and exit")
+
+		condense    = flag.String("condense", "", "condense packages. argument is the target. (\"-\" is stdout and will just list filenames)")
+		vcomp       = flag.Bool("vcomp", false, "compare the first two non-flag arguments as versions")
+		archsubdirs = flag.Bool("archsubdirs", true, "create a subdir per arch when bundling packages")
 
 		listen net.Listener
 		err    error
@@ -74,6 +79,33 @@ func main() {
 	if *bind == "" {
 		fmt.Fprintf(os.Stderr, "usage error: missing / empty -bind\n")
 		os.Exit(1)
+	}
+
+	if *condense != "" {
+		var (
+			err        error
+			condensate *packageIndex
+		)
+		if condensate, err = condensePackages(flag.Args(), *nworkers); err == nil {
+			if err = condensate.writeBundle(*condense, *archsubdirs); err == nil {
+				os.Exit(0)
+			}
+		}
+		log.Println("error:", err)
+		os.Exit(1)
+	}
+
+	if *vcomp {
+		if len(flag.Args()) != 2 {
+			fmt.Fprintf(os.Stderr, "vcomp option requires exactly two arguments for comparison\n")
+			os.Exit(1)
+		}
+		v1 := flag.Args()[0]
+		v2 := flag.Args()[1]
+		rel := map[int]string{0: "==", 1: ">", -1: "<"}
+		rc := compareVersion(v1, v2)
+		fmt.Printf("comparing %s %s %s (comp: %d).\n", v1, rel[rc], v2, rc)
+		os.Exit(0)
 	}
 
 	if *rootName == "" {

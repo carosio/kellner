@@ -30,12 +30,13 @@ import (
 )
 
 type ipkArchive struct {
-	Name     string
-	Control  string // content of 'control' file
-	Header   map[string]string
-	FileInfo os.FileInfo
-	Md5      string
-	Sha1     string
+	Name         string
+	Control      string // content of 'control' file
+	Header       map[string]string
+	FileInfo     os.FileInfo
+	Md5          string
+	Sha1         string
+	ScanLocation string // location where the ipk was found
 }
 
 // ControlToHeader parses 'control' and stores the result in ipkg.Header
@@ -177,15 +178,14 @@ func extractControlFromIpk(reader io.Reader) (string, error) {
 	return buffer.String(), nil
 }
 
-func newIpkFromFile(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error) {
+func newIpkFromFile(fullName string, doMD5, doSHA1 bool) (*ipkArchive, error) {
 
 	var (
-		fullName = path.Join(root, name)
-		file     *os.File
-		writer   = make([]io.Writer, 0, 3)
-		err      error
-		md5er    hash.Hash
-		sha1er   hash.Hash
+		file   *os.File
+		writer = make([]io.Writer, 0, 3)
+		err    error
+		md5er  hash.Hash
+		sha1er hash.Hash
 	)
 
 	file, err = os.Open(fullName)
@@ -211,7 +211,11 @@ func newIpkFromFile(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error) 
 		return nil, fmt.Errorf("extract pkg-info from %q: %v", fullName, err)
 	}
 
-	archive := &ipkArchive{Name: name, Control: control, Header: make(map[string]string)}
+	archive := &ipkArchive{
+		Name:         path.Base(fullName),
+		Control:      control,
+		Header:       make(map[string]string),
+		ScanLocation: fullName}
 
 	if err := archive.ControlToHeader(control); err != nil {
 		return nil, fmt.Errorf("header parse error in %q: %v", fullName, err)
@@ -232,23 +236,23 @@ func newIpkFromFile(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error) 
 	return archive, nil
 }
 
-func newIpkFromCache(name, root string, doMD5, doSHA1 bool) (*ipkArchive, error) {
+func newIpkFromCache(name, cachepath string, doMD5, doSHA1 bool) (*ipkArchive, error) {
 
 	var (
-		fullName = genCachedControlName(name, root)
+		ctrlName = genCachedControlName(name, cachepath)
 		control  []byte
 		err      error
 	)
 
-	if control, err = ioutil.ReadFile(fullName); err != nil {
-		return nil, fmt.Errorf("reading cache %q: %v\n", fullName, err)
+	if control, err = ioutil.ReadFile(ctrlName); err != nil {
+		return nil, fmt.Errorf("reading cache %q: %v\n", ctrlName, err)
 	}
 
 	var archive = &ipkArchive{Name: name,
 		Control: string(control),
 		Header:  make(map[string]string),
 	}
-	archive.FileInfo, _ = os.Stat(fullName)
+	archive.FileInfo, _ = os.Stat(ctrlName)
 	archive.ControlToHeader(archive.Control)
 
 	return archive, nil

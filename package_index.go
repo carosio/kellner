@@ -50,8 +50,8 @@ func (pi *packageIndex) String() string {
 
 func (pi *packageIndex) SortedNames() []string {
 	var names = make([]string, 0, len(pi.Entries))
-	for name := range pi.Entries {
-		names = append(names, name)
+	for _, pkg := range pi.Entries {
+		names = append(names, pkg.Name)
 	}
 	sort.Strings(names)
 	return names
