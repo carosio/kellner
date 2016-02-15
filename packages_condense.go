@@ -9,9 +9,7 @@
 package main
 
 import (
-	"archive/zip"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -24,8 +22,9 @@ import (
 // recursively scan through a list of directories and find
 // packages. per package (and architecture) keep only the
 // most recent version.
-// output the list (plan: create zip) of resultant packages
-func condensePackages(roots []string, nworkers int, output string, archsubdirs bool) error {
+// the result/output is collected within a packageIndex
+// and returned.
+func condensePackages(roots []string, nworkers int) (*packageIndex, error) {
 	var (
 		scanner = packageScanner{
 			doMD5:  false,
@@ -50,12 +49,12 @@ func condensePackages(roots []string, nworkers int, output string, archsubdirs b
 			return nil
 		})
 		if werr != nil {
-			return werr
+			return nil, werr
 		}
 	}
 	if scanner.packages == nil {
 		log.Printf("no packages found.\n")
-		return fmt.Errorf("no packages found.")
+		return nil, fmt.Errorf("no packages found.")
 	}
 
 	// and now to the act of condensing...
@@ -71,7 +70,7 @@ func condensePackages(roots []string, nworkers int, output string, archsubdirs b
 		synthetic_pkgname := fmt.Sprintf("%s_%s_%s.ipk",
 			pkg.Header["Package"], epochless_version, pkg.Header["Architecture"])
 		if synthetic_pkgname != pkgname {
-			return fmt.Errorf("package %s has mismatching control-information \"%s\"",
+			return nil, fmt.Errorf("package %s has mismatching control-information \"%s\"",
 				pkgname, synthetic_pkgname)
 		}
 		cname := pkg.Header["Architecture"] + pkg.Header["Package"] // condense-key
@@ -88,48 +87,9 @@ func condensePackages(roots []string, nworkers int, output string, archsubdirs b
 			condensate.Add(cname, pkg)
 		}
 	}
-
-	// now let us create a zipfile with the condensated files
-	if output == "-" {
-		// this is more a debugging thing,
-		// output filenames to stdout
-		fmt.Printf("sorted names:\n%s\n", strings.Join(condensate.SortedNames(), "\n"))
-	} else if strings.HasSuffix(output, ".zip") {
-		zipfile, err := os.Create(output)
-		if err != nil {
-			return err
-		}
-		defer zipfile.Close()
-
-		zipper := zip.NewWriter(zipfile)
-		defer zipper.Close()
-
-		for _, pkg := range condensate.Entries {
-			header := &zip.FileHeader{Name: pkg.Name}
-			if archsubdirs {
-				header.Name = filepath.Join(pkg.Header["Architecture"], header.Name)
-			}
-			header.SetModTime(now)
-			writer, zwerr := zipper.CreateHeader(header)
-			if zwerr != nil {
-				return zwerr
-			}
-			// read scanned package from original location
-			sourcepkg, srcerr := os.Open(pkg.ScanLocation)
-			if srcerr != nil {
-				return srcerr
-			}
-			// and write bytes into the zip/bundle
-			_, cperr := io.Copy(writer, sourcepkg)
-			sourcepkg.Close()
-			if cperr != nil {
-				return cperr
-			}
-		}
-	}
 	log.Printf("condensed %d into %d packages. done after %s\n",
 		scanner.packages.Len(), condensate.Len(), time.Since(now))
-	return nil
+	return condensate, nil
 }
 
 // compare to versions,

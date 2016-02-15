@@ -82,12 +82,17 @@ func main() {
 	}
 
 	if *condense != "" {
-		if err := condensePackages(flag.Args(), *nworkers, *condense, *archsubdirs); err == nil {
-			os.Exit(0)
-		} else {
-			log.Println("error:", err)
-			os.Exit(1)
+		var (
+			err        error
+			condensate *packageIndex
+		)
+		if condensate, err = condensePackages(flag.Args(), *nworkers); err == nil {
+			if err = condensate.writeBundle(*condense, *archsubdirs); err == nil {
+				os.Exit(0)
+			}
 		}
+		log.Println("error:", err)
+		os.Exit(1)
 	}
 
 	if *vcomp {
