@@ -1,5 +1,11 @@
 == CHANGES for *kellner*
 
+=== 2016-02-15 Release-0.6.0
+
+* Feature: creation of package-bundles (-condense)
+* Feature: add -vcomp option to compare version strings
+* Fix: make -dump behave as recursive as scanning
+
 === 2016-01-14 Release-0.5.4
 
 * Improve error handling of malformed .ipk meta data
