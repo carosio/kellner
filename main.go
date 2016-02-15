@@ -91,10 +91,15 @@ func main() {
 	}
 
 	if *vcomp {
+		if len(flag.Args()) != 2 {
+			fmt.Fprintf(os.Stderr, "vcomp option requires exactly two arguments for comparison\n")
+			os.Exit(1)
+		}
 		v1 := flag.Args()[0]
 		v2 := flag.Args()[1]
-		fmt.Printf("comparing %s =?= %s ==> %d.\n", v1, v2,
-			compareVersion(flag.Args()[0], flag.Args()[1]))
+		rel := map[int]string{0: "==", 1: ">", -1: "<"}
+		rc := compareVersion(v1, v2)
+		fmt.Printf("comparing %s %s %s (comp: %d).\n", v1, rel[rc], v2, rc)
 		os.Exit(0)
 	}
 
